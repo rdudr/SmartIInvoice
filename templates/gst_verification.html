@@ -4,81 +4,100 @@
 
 {% block page_title %}GST Verification{% endblock %}
 
+{% block page_subtitle %}Verify vendor GST numbers with government portal{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <!-- Filter Controls -->
-    <div class="bg-white rounded-lg shadow-sm p-6">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-800">Invoice List</h3>
-            <div class="text-sm text-gray-600">
-                Total: {{ total_count }} invoice{{ total_count|pluralize }}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-300">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-900">Invoice List</h3>
+                <p class="text-sm text-gray-500 mt-1">Manage GST verification status</p>
+            </div>
+            <div class="mt-3 sm:mt-0">
+                <div class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    <i class="fas fa-list mr-2"></i>
+                    Total: {{ total_count }} invoice{{ total_count|pluralize }}
+                </div>
             </div>
         </div>
         
         <!-- Filter Buttons -->
-        <div class="flex space-x-2">
-            <a href="?status=all" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'all' %}bg-primary text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-                All
+        <div class="flex flex-wrap gap-2">
+            <a href="?status=all" class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 transform hover:scale-105 {% if current_filter == 'all' %}bg-gradient-to-r from-primary to-secondary text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                <i class="fas fa-list mr-2"></i>All
             </a>
-            <a href="?status=pending" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'pending' %}bg-yellow-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-                Pending Verification
+            <a href="?status=pending" class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 transform hover:scale-105 {% if current_filter == 'pending' %}bg-gradient-to-r from-yellow-400 to-yellow-500 text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                <i class="fas fa-clock mr-2"></i>Pending
             </a>
-            <a href="?status=verified" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'verified' %}bg-green-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-                Verified
+            <a href="?status=verified" class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 transform hover:scale-105 {% if current_filter == 'verified' %}bg-gradient-to-r from-green-400 to-green-500 text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                <i class="fas fa-check-circle mr-2"></i>Verified
             </a>
-            <a href="?status=failed" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'failed' %}bg-red-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
-                Verification Failed
+            <a href="?status=failed" class="inline-flex items-center px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 transform hover:scale-105 {% if current_filter == 'failed' %}bg-gradient-to-r from-red-400 to-red-500 text-white shadow-md{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                <i class="fas fa-times-circle mr-2"></i>Failed
             </a>
         </div>
     </div>
 
     <!-- Invoice Table -->
-    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-300">
         {% if page_obj.object_list %}
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                    <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Invoice Number
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <i class="fas fa-file-invoice mr-2"></i>Invoice Number
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Vendor Name
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden sm:table-cell">
+                                <i class="fas fa-building mr-2"></i>Vendor Name
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Vendor GSTIN
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">
+                                <i class="fas fa-id-card mr-2"></i>Vendor GSTIN
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Date
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden lg:table-cell">
+                                <i class="fas fa-calendar mr-2"></i>Date
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Verification Status
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <i class="fas fa-shield-alt mr-2"></i>Status
                             </th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Action
+                            <th class="px-4 lg:px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <i class="fas fa-cog mr-2"></i>Action
                             </th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         {% for invoice in page_obj.object_list %}
-                            <tr class="hover:bg-gray-50" data-invoice-id="{{ invoice.id }}">
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {{ invoice.invoice_id|default:"N/A" }}
+                            <tr class="hover:bg-blue-50 transition-colors duration-200 cursor-pointer" data-invoice-id="{{ invoice.id }}">
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 w-2 h-2 rounded-full mr-3
+                                            {% if invoice.gst_verification_status == 'VERIFIED' %}bg-green-500
+                                            {% elif invoice.gst_verification_status == 'FAILED' %}bg-red-500
+                                            {% else %}bg-yellow-500 animate-pulse{% endif %}">
+                                        </div>
+                                        <div>
+                                            <span class="text-sm font-semibold text-gray-900">{{ invoice.invoice_id|default:"N/A" }}</span>
+                                            <div class="text-xs text-gray-500 sm:hidden mt-1">{{ invoice.vendor_name|truncatechars:20 }}</div>
+                                        </div>
+                                    </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    {{ invoice.vendor_name|truncatechars:30 }}
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden sm:table-cell">
+                                    <div class="font-medium">{{ invoice.vendor_name|truncatechars:25 }}</div>
+                                    <div class="text-xs text-gray-500 md:hidden">{{ invoice.vendor_gstin|default:"No GSTIN" }}</div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                                    {{ invoice.vendor_gstin|default:"N/A" }}
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono hidden md:table-cell">
+                                    <span class="bg-gray-100 px-2 py-1 rounded-lg">{{ invoice.vendor_gstin|default:"N/A" }}</span>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                                     {{ invoice.invoice_date|date:"M d, Y"|default:"N/A" }}
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full 
-                                        {% if invoice.gst_verification_status == 'VERIFIED' %}bg-green-100 text-green-800
-                                        {% elif invoice.gst_verification_status == 'FAILED' %}bg-red-100 text-red-800
-                                        {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap">
+                                    <span class="status-badge inline-flex items-center px-3 py-1 text-xs font-bold rounded-full border
+                                        {% if invoice.gst_verification_status == 'VERIFIED' %}bg-green-100 text-green-800 border-green-200
+                                        {% elif invoice.gst_verification_status == 'FAILED' %}bg-red-100 text-red-800 border-red-200
+                                        {% else %}bg-yellow-100 text-yellow-800 border-yellow-200{% endif %}">
                                         {% if invoice.gst_verification_status == 'VERIFIED' %}
                                             <i class="fas fa-check-circle mr-1"></i>Verified
                                         {% elif invoice.gst_verification_status == 'FAILED' %}
@@ -88,16 +107,19 @@
                                         {% endif %}
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <td class="px-4 lg:px-6 py-4 whitespace-nowrap text-sm">
                                     {% if invoice.gst_verification_status == 'PENDING' and invoice.vendor_gstin %}
                                         <button onclick="startVerification({{ invoice.id }}, '{{ invoice.vendor_gstin }}')" 
-                                                class="verify-btn bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors">
-                                            <i class="fas fa-shield-alt mr-1"></i>Verify
+                                                class="verify-btn inline-flex items-center bg-gradient-to-r from-primary to-secondary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
+                                            <i class="fas fa-shield-alt mr-2"></i>Verify
                                         </button>
                                     {% elif not invoice.vendor_gstin %}
-                                        <span class="text-gray-400 text-sm">No GSTIN</span>
+                                        <span class="inline-flex items-center text-gray-400 text-sm bg-gray-100 px-3 py-1 rounded-full">
+                                            <i class="fas fa-minus-circle mr-1"></i>No GSTIN
+                                        </span>
                                     {% else %}
-                                        <span class="text-gray-400 text-sm">
+                                        <span class="inline-flex items-center text-gray-500 text-sm bg-gray-100 px-3 py-1 rounded-full">
+                                            <i class="fas fa-check mr-1"></i>
                                             {% if invoice.gst_verification_status == 'VERIFIED' %}Completed{% else %}Failed{% endif %}
                                         </span>
                                     {% endif %}
@@ -188,54 +210,62 @@
 </div>
 
 <!-- CAPTCHA Modal -->
-<div id="captchaModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+<div id="captchaModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50 backdrop-blur-sm">
+    <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-2xl rounded-2xl bg-white animate-slide-in">
         <div class="mt-3">
             <!-- Modal Header -->
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-semibold text-gray-900">GST Verification</h3>
-                <button onclick="closeCaptchaModal()" class="text-gray-400 hover:text-gray-600">
-                    <i class="fas fa-times"></i>
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-900">GST Verification</h3>
+                    <p class="text-sm text-gray-500 mt-1">Verify GSTIN with government portal</p>
+                </div>
+                <button onclick="closeCaptchaModal()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors">
+                    <i class="fas fa-times text-lg"></i>
                 </button>
             </div>
             
             <!-- Modal Content -->
             <div id="modalContent">
                 <!-- Loading State -->
-                <div id="loadingState" class="text-center py-8">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                    <p class="text-gray-600">Requesting CAPTCHA...</p>
+                <div id="loadingState" class="text-center py-12">
+                    <div class="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent"></div>
+                    </div>
+                    <p class="text-gray-700 font-medium">Requesting CAPTCHA...</p>
+                    <p class="text-sm text-gray-500 mt-2">Please wait while we connect to GST portal</p>
                 </div>
                 
                 <!-- CAPTCHA Form -->
                 <div id="captchaForm" class="hidden">
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            GSTIN to verify:
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-gray-700 mb-3">
+                            <i class="fas fa-id-card mr-2 text-primary"></i>GSTIN to verify:
                         </label>
-                        <div id="gstinDisplay" class="px-3 py-2 bg-gray-50 border border-gray-300 rounded-md font-mono text-sm"></div>
+                        <div id="gstinDisplay" class="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-300 rounded-xl font-mono text-sm font-semibold text-gray-800 text-center"></div>
                     </div>
                     
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            Enter CAPTCHA:
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-gray-700 mb-3">
+                            <i class="fas fa-eye mr-2 text-primary"></i>Enter CAPTCHA:
                         </label>
-                        <div class="mb-3">
-                            <img id="captchaImage" src="" alt="CAPTCHA" class="border border-gray-300 rounded-md mx-auto" />
+                        <div class="mb-4 flex justify-center">
+                            <div class="p-3 bg-white border-2 border-gray-300 rounded-xl shadow-sm">
+                                <img id="captchaImage" src="" alt="CAPTCHA" class="rounded-lg" />
+                            </div>
                         </div>
                         <input type="text" id="captchaInput" 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-center font-mono text-lg font-semibold"
                                placeholder="Enter CAPTCHA text" maxlength="10" />
                     </div>
                     
                     <div class="flex space-x-3">
                         <button onclick="submitVerification()" 
-                                class="flex-1 bg-primary text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
-                            <i class="fas fa-check mr-1"></i>Verify
+                                class="flex-1 bg-gradient-to-r from-primary to-secondary text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all duration-200 font-semibold transform hover:scale-105 shadow-md">
+                            <i class="fas fa-check mr-2"></i>Verify GSTIN
                         </button>
                         <button onclick="refreshCaptcha()" 
-                                class="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
-                            <i class="fas fa-refresh mr-1"></i>Refresh
+                                class="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-semibold transform hover:scale-105">
+                            <i class="fas fa-refresh mr-2"></i>Refresh
                         </button>
                     </div>
                 </div>

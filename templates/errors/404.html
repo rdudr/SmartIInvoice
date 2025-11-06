@@ -3,7 +3,9 @@
 {% block title %}Page Not Found - Smart iInvoice{% endblock %}
 
 {% block error_icon %}
-<i class="fas fa-search text-6xl text-gray-400"></i>
+<div class="w-20 h-20 mx-auto bg-gradient-to-br from-gray-400 to-gray-500 rounded-full flex items-center justify-center shadow-lg animate-bounce-in">
+    <i class="fas fa-search text-3xl text-white"></i>
+</div>
 {% endblock %}
 
 {% block error_title %}Page Not Found{% endblock %}
@@ -15,26 +17,26 @@ The page you are looking for might have been removed, had its name changed, or i
 {% block action_buttons %}
 {% if user.is_authenticated %}
     <a href="{% url 'dashboard' %}" 
-       class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+       class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-primary to-secondary hover:from-blue-600 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105 shadow-lg">
         <i class="fas fa-tachometer-alt mr-2"></i>
         Go to Dashboard
     </a>
     
     <a href="{% url 'gst_verification' %}" 
-       class="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+       class="w-full inline-flex justify-center items-center px-6 py-3 border border-gray-300 text-sm font-semibold rounded-xl text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105">
         <i class="fas fa-file-invoice mr-2"></i>
         GST Verification
     </a>
 {% else %}
     <a href="{% url 'login' %}" 
-       class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+       class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-primary to-secondary hover:from-blue-600 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105 shadow-lg">
         <i class="fas fa-sign-in-alt mr-2"></i>
-        Login
+        Login to Smart iInvoice
     </a>
 {% endif %}
 
 <button onclick="history.back()" 
-        class="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+        class="w-full inline-flex justify-center items-center px-6 py-3 border border-gray-300 text-sm font-semibold rounded-xl text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105">
     <i class="fas fa-arrow-left mr-2"></i>
     Go Back
 </button>

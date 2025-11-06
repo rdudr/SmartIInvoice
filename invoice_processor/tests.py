@@ -79,6 +79,7 @@ class GeminiServiceTests(TestCase):
 
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from datetime import date
 
@@ -87,6 +88,270 @@ from invoice_processor.services.analysis_engine import (
     normalize_product_key, check_duplicates, check_arithmetics, 
     check_hsn_rates, check_price_outliers, run_all_checks
 )
+
+
+class ModelValidationTests(TestCase):
+    """Test cases for model validations and relationships"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+    
+    def test_invoice_model_creation(self):
+        """Test Invoice model creation with valid data"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-001',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor Ltd',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1180.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice.pdf'
+        )
+        
+        self.assertEqual(invoice.invoice_id, 'TEST-001')
+        self.assertEqual(invoice.vendor_name, 'Test Vendor Ltd')
+        self.assertEqual(invoice.status, 'PENDING_ANALYSIS')  # Default status
+        self.assertEqual(invoice.gst_verification_status, 'PENDING')  # Default status
+        self.assertEqual(str(invoice), 'Invoice TEST-001 - Test Vendor Ltd')
+    
+    def test_invoice_model_relationships(self):
+        """Test Invoice model relationships with User"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-002',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice2.pdf'
+        )
+        
+        # Test foreign key relationship
+        self.assertEqual(invoice.uploaded_by, self.user)
+        self.assertIn(invoice, self.user.invoice_set.all())
+    
+    def test_invoice_status_choices(self):
+        """Test Invoice status field choices"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-003',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice3.pdf'
+        )
+        
+        # Test valid status changes
+        invoice.status = 'CLEARED'
+        invoice.save()
+        self.assertEqual(invoice.status, 'CLEARED')
+        
+        invoice.status = 'HAS_ANOMALIES'
+        invoice.save()
+        self.assertEqual(invoice.status, 'HAS_ANOMALIES')
+        
+        # Test GST verification status
+        invoice.gst_verification_status = 'VERIFIED'
+        invoice.save()
+        self.assertEqual(invoice.gst_verification_status, 'VERIFIED')
+    
+    def test_line_item_model_creation(self):
+        """Test LineItem model creation and relationships"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-004',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1180.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice4.pdf'
+        )
+        
+        line_item = LineItem.objects.create(
+            invoice=invoice,
+            description='Test Product A',
+            normalized_key='test product',
+            hsn_sac_code='1001',
+            quantity=Decimal('10'),
+            unit_price=Decimal('100.00'),
+            billed_gst_rate=Decimal('18.00'),
+            line_total=Decimal('1180.00')
+        )
+        
+        self.assertEqual(line_item.invoice, invoice)
+        self.assertEqual(line_item.description, 'Test Product A')
+        self.assertEqual(line_item.normalized_key, 'test product')
+        self.assertEqual(str(line_item), 'Test Product A - TEST-004')
+        
+        # Test relationship from invoice side
+        self.assertIn(line_item, invoice.line_items.all())
+        self.assertEqual(invoice.line_items.count(), 1)
+    
+    def test_compliance_flag_model_creation(self):
+        """Test ComplianceFlag model creation and relationships"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-005',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice5.pdf'
+        )
+        
+        line_item = LineItem.objects.create(
+            invoice=invoice,
+            description='Test Product',
+            normalized_key='test product',
+            hsn_sac_code='1001',
+            quantity=Decimal('5'),
+            unit_price=Decimal('200.00'),
+            billed_gst_rate=Decimal('18.00'),
+            line_total=Decimal('1180.00')
+        )
+        
+        # Test flag without line item reference
+        flag1 = ComplianceFlag.objects.create(
+            invoice=invoice,
+            flag_type='DUPLICATE',
+            severity='CRITICAL',
+            description='Duplicate invoice detected'
+        )
+        
+        # Test flag with line item reference
+        flag2 = ComplianceFlag.objects.create(
+            invoice=invoice,
+            line_item=line_item,
+            flag_type='PRICE_ANOMALY',
+            severity='WARNING',
+            description='Price anomaly detected for this item'
+        )
+        
+        self.assertEqual(flag1.invoice, invoice)
+        self.assertIsNone(flag1.line_item)
+        self.assertEqual(flag1.flag_type, 'DUPLICATE')
+        self.assertEqual(flag1.severity, 'CRITICAL')
+        self.assertEqual(str(flag1), 'DUPLICATE - TEST-005')
+        
+        self.assertEqual(flag2.invoice, invoice)
+        self.assertEqual(flag2.line_item, line_item)
+        self.assertEqual(flag2.flag_type, 'PRICE_ANOMALY')
+        self.assertEqual(flag2.severity, 'WARNING')
+        
+        # Test relationships
+        self.assertEqual(invoice.compliance_flags.count(), 2)
+        self.assertIn(flag1, invoice.compliance_flags.all())
+        self.assertIn(flag2, invoice.compliance_flags.all())
+    
+    def test_compliance_flag_choices(self):
+        """Test ComplianceFlag field choices"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-006',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice6.pdf'
+        )
+        
+        # Test all flag types
+        flag_types = ['DUPLICATE', 'ARITHMETIC_ERROR', 'HSN_MISMATCH', 'UNKNOWN_HSN', 'PRICE_ANOMALY', 'SYSTEM_ERROR']
+        severities = ['CRITICAL', 'WARNING', 'INFO']
+        
+        for flag_type in flag_types:
+            for severity in severities:
+                flag = ComplianceFlag.objects.create(
+                    invoice=invoice,
+                    flag_type=flag_type,
+                    severity=severity,
+                    description=f'Test {flag_type} with {severity} severity'
+                )
+                self.assertEqual(flag.flag_type, flag_type)
+                self.assertEqual(flag.severity, severity)
+    
+    def test_model_cascade_deletion(self):
+        """Test cascade deletion behavior"""
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-007',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice7.pdf'
+        )
+        
+        line_item = LineItem.objects.create(
+            invoice=invoice,
+            description='Test Product',
+            normalized_key='test product',
+            hsn_sac_code='1001',
+            quantity=Decimal('1'),
+            unit_price=Decimal('1000.00'),
+            billed_gst_rate=Decimal('0.00'),
+            line_total=Decimal('1000.00')
+        )
+        
+        flag = ComplianceFlag.objects.create(
+            invoice=invoice,
+            line_item=line_item,
+            flag_type='ARITHMETIC_ERROR',
+            severity='CRITICAL',
+            description='Test flag'
+        )
+        
+        # Verify objects exist
+        self.assertTrue(Invoice.objects.filter(id=invoice.id).exists())
+        self.assertTrue(LineItem.objects.filter(id=line_item.id).exists())
+        self.assertTrue(ComplianceFlag.objects.filter(id=flag.id).exists())
+        
+        # Delete invoice - should cascade to line items and flags
+        invoice.delete()
+        
+        # Verify cascade deletion
+        self.assertFalse(Invoice.objects.filter(id=invoice.id).exists())
+        self.assertFalse(LineItem.objects.filter(id=line_item.id).exists())
+        self.assertFalse(ComplianceFlag.objects.filter(id=flag.id).exists())
+    
+    def test_model_indexes(self):
+        """Test that model indexes are properly configured"""
+        # This test verifies that the models can be created and queried efficiently
+        # The actual index testing would require database introspection
+        
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-008',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice8.pdf'
+        )
+        
+        # Test queries that should use indexes
+        # These should execute efficiently due to db_index=True fields
+        result1 = Invoice.objects.filter(vendor_gstin='27AAPFU0939F1ZV')
+        result2 = Invoice.objects.filter(status='PENDING_ANALYSIS')
+        result3 = Invoice.objects.filter(gst_verification_status='PENDING')
+        
+        self.assertIn(invoice, result1)
+        self.assertIn(invoice, result2)
+        self.assertIn(invoice, result3)
 
 
 class AnalysisEngineTests(TestCase):
@@ -324,13 +589,35 @@ class InvoiceUploadTests(TestCase):
     
     def create_test_image_file(self):
         """Create a test image file for upload"""
-        # Create a simple test image
-        image = Image.new('RGB', (100, 100), color='white')
+        # Create a larger test image with proper PNG signature (at least 1KB)
+        image = Image.new('RGB', (500, 500), color='white')
         image_io = BytesIO()
         image.save(image_io, format='PNG')
+        
+        # Ensure file is large enough by adding some content if needed
+        current_size = image_io.tell()
+        if current_size < 1024:  # Less than 1KB
+            # Add some dummy data to make it larger
+            padding = b'0' * (1024 - current_size)
+            image_io.write(padding)
+        
         image_io.seek(0)
         image_io.name = 'test_invoice.png'
+        image_io.content_type = 'image/png'
+        
+        # Set size attribute for Django file validation
+        image_io.size = len(image_io.getvalue())
+        
         return image_io
+    
+    def create_test_pdf_file(self):
+        """Create a test PDF file for upload"""
+        # Create a minimal PDF file with proper PDF signature
+        pdf_content = b'%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000074 00000 n \n0000000120 00000 n \ntrailer\n<<\n/Size 4\n/Root 1 0 R\n>>\nstartxref\n179\n%%EOF'
+        pdf_io = BytesIO(pdf_content)
+        pdf_io.name = 'test_invoice.pdf'
+        pdf_io.content_type = 'application/pdf'
+        return pdf_io
     
     def test_upload_requires_authentication(self):
         """Test that upload endpoint requires authentication"""
@@ -394,6 +681,7 @@ class InvoiceUploadTests(TestCase):
         # Create invalid file (text file)
         invalid_file = BytesIO(b'This is not an image')
         invalid_file.name = 'test.txt'
+        invalid_file.content_type = 'text/plain'
         
         response = self.client.post(self.upload_url, {
             'invoice_file': invalid_file
@@ -402,7 +690,7 @@ class InvoiceUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         response_data = json.loads(response.content)
         self.assertFalse(response_data['success'])
-        self.assertIn('Invalid file upload', response_data['error'])
+        self.assertEqual(response_data['error'], 'File validation failed')
     
     @patch('invoice_processor.views.extract_data_from_image')
     def test_upload_not_invoice(self, mock_extract):
@@ -422,7 +710,7 @@ class InvoiceUploadTests(TestCase):
         self.assertEqual(response.status_code, 400)
         response_data = json.loads(response.content)
         self.assertFalse(response_data['success'])
-        self.assertIn('not appear to be a valid invoice', response_data['error'])
+        self.assertEqual(response_data['error'], 'Not an invoice')
     
     @patch('invoice_processor.views.extract_data_from_image')
     @patch('invoice_processor.views.run_all_checks')
