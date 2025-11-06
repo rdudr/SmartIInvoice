@@ -4,9 +4,11 @@ import logging
 import time
 from typing import Dict, Any, Optional
 from decouple import config
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 import io
+import fitz  # PyMuPDF for PDF processing
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +22,9 @@ class GeminiService:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable is required")
         
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-pro-vision')
+        # Initialize the new Gemini client
+        self.client = genai.Client(api_key=self.api_key)
+        self.model_name = 'gemini-2.5-flash'
         
         # Configuration for API calls
         self.max_retries = 1
@@ -92,6 +95,7 @@ class GeminiService:
     def _process_image_file(self, image_file) -> Optional[Image.Image]:
         """
         Process uploaded file and convert to PIL Image
+        Supports both image files (PNG, JPG, JPEG) and PDF files
         
         Args:
             image_file: Uploaded file object
@@ -106,6 +110,71 @@ class GeminiService:
             # Read file content
             file_content = image_file.read()
             
+            # Check if it's a PDF file
+            if file_content.startswith(b'%PDF'):
+                logger.info("Processing PDF file")
+                return self._convert_pdf_to_image(file_content)
+            else:
+                logger.info("Processing image file")
+                return self._process_image_content(file_content)
+            
+        except Exception as e:
+            logger.error(f"Error processing file: {str(e)}")
+            return None
+    
+    def _convert_pdf_to_image(self, pdf_content: bytes) -> Optional[Image.Image]:
+        """
+        Convert PDF to image using PyMuPDF
+        
+        Args:
+            pdf_content: PDF file content as bytes
+            
+        Returns:
+            PIL.Image: First page of PDF as image or None if conversion fails
+        """
+        try:
+            # Open PDF from memory
+            pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
+            
+            if pdf_document.page_count == 0:
+                logger.error("PDF has no pages")
+                return None
+            
+            # Get first page
+            page = pdf_document[0]
+            
+            # Convert to image with high resolution
+            mat = fitz.Matrix(2.0, 2.0)  # 2x zoom for better quality
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Convert to PIL Image
+            img_data = pix.tobytes("png")
+            image = Image.open(io.BytesIO(img_data))
+            
+            # Convert to RGB if necessary
+            if image.mode in ('RGBA', 'LA', 'P'):
+                image = image.convert('RGB')
+            
+            pdf_document.close()
+            logger.info(f"Successfully converted PDF to image: {image.size}")
+            
+            return image
+            
+        except Exception as e:
+            logger.error(f"Error converting PDF to image: {str(e)}")
+            return None
+    
+    def _process_image_content(self, file_content: bytes) -> Optional[Image.Image]:
+        """
+        Process image file content
+        
+        Args:
+            file_content: Image file content as bytes
+            
+        Returns:
+            PIL.Image: Processed image or None if processing fails
+        """
+        try:
             # Create PIL Image from file content
             image = Image.open(io.BytesIO(file_content))
             
@@ -113,10 +182,11 @@ class GeminiService:
             if image.mode in ('RGBA', 'LA', 'P'):
                 image = image.convert('RGB')
             
+            logger.info(f"Successfully processed image: {image.size}")
             return image
             
         except Exception as e:
-            logger.error(f"Error processing image file: {str(e)}")
+            logger.error(f"Error processing image content: {str(e)}")
             return None
     
     def _create_extraction_prompt(self) -> str:
@@ -177,8 +247,23 @@ Extract data carefully and return only the JSON response.
             try:
                 logger.info(f"Calling Gemini API (attempt {attempt + 1}/{self.max_retries + 1})")
                 
-                # Generate content using Gemini
-                response = self.model.generate_content([prompt, image])
+                # Convert PIL Image to bytes for the new API
+                img_byte_arr = io.BytesIO()
+                image.save(img_byte_arr, format='PNG')
+                img_byte_arr.seek(0)
+                image_bytes = img_byte_arr.getvalue()
+                
+                # Create image part using the new API
+                image_part = types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type='image/png'
+                )
+                
+                # Generate content using the new Gemini client
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[prompt, image_part]
+                )
                 
                 if response and response.text:
                     logger.info("Successfully received response from Gemini API")

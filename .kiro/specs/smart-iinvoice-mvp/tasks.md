@@ -175,7 +175,9 @@
   - Write tests for gst_client with mocked microservice
   - _Requirements: All requirements (validation)_
 
-- [-] 13. Perform integration and manual testing
+- [x] 13. Perform integration and manual testing
+
+
 
 
 

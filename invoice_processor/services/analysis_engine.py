@@ -9,6 +9,7 @@ and price anomaly detection.
 import json
 import re
 import logging
+import decimal
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Dict, Optional, Tuple
 from django.db.models import Avg, Count
@@ -223,13 +224,23 @@ def check_arithmetics(invoice_data: Dict) -> List[ComplianceFlag]:
         # Check each line item calculation
         for i, item in enumerate(line_items):
             try:
-                quantity = Decimal(str(item.get('quantity', 0)))
-                unit_price = Decimal(str(item.get('unit_price', 0)))
-                billed_gst_rate = Decimal(str(item.get('billed_gst_rate', 0)))
-                line_total = item.get('line_total')
+                # Helper function to safely convert to Decimal
+                def safe_decimal(value, default=0):
+                    if value is None or value == '':
+                        return Decimal(str(default))
+                    try:
+                        return Decimal(str(value))
+                    except (ValueError, TypeError, decimal.InvalidOperation):
+                        return Decimal(str(default))
                 
-                if line_total is not None:
-                    line_total = Decimal(str(line_total))
+                quantity = safe_decimal(item.get('quantity'), 0)
+                unit_price = safe_decimal(item.get('unit_price'), 0)
+                billed_gst_rate = safe_decimal(item.get('billed_gst_rate'), 0)
+                line_total_raw = item.get('line_total')
+                
+                line_total = None
+                if line_total_raw is not None:
+                    line_total = safe_decimal(line_total_raw, 0)
                 
                 # Calculate expected line total
                 # Line total = (quantity * unit_price) + GST

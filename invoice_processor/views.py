@@ -249,15 +249,24 @@ def upload_invoice(request):
                 for item_data in line_items_data:
                     if item_data.get('description'):  # Only create if description exists
                         try:
+                            # Helper function to safely convert to Decimal
+                            def safe_decimal(value, default=0):
+                                if value is None or value == '':
+                                    return Decimal(str(default))
+                                try:
+                                    return Decimal(str(value))
+                                except (ValueError, TypeError, decimal.InvalidOperation):
+                                    return Decimal(str(default))
+                            
                             LineItem.objects.create(
                                 invoice=invoice,
                                 description=item_data.get('description', ''),
                                 normalized_key=normalize_product_key(item_data.get('description', '')),
                                 hsn_sac_code=item_data.get('hsn_sac_code') or '',
-                                quantity=Decimal(str(item_data.get('quantity', 0))),
-                                unit_price=Decimal(str(item_data.get('unit_price', 0))),
-                                billed_gst_rate=Decimal(str(item_data.get('billed_gst_rate', 0))),
-                                line_total=Decimal(str(item_data.get('line_total', 0)))
+                                quantity=safe_decimal(item_data.get('quantity'), 0),
+                                unit_price=safe_decimal(item_data.get('unit_price'), 0),
+                                billed_gst_rate=safe_decimal(item_data.get('billed_gst_rate'), 0),
+                                line_total=safe_decimal(item_data.get('line_total'), 0)
                             )
                             created_line_items += 1
                         except (ValueError, TypeError, decimal.InvalidOperation) as e:
