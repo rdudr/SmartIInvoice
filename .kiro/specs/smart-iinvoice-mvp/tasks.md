@@ -13,21 +13,36 @@
   - Create directory structure for services, templates, and static files
   - _Requirements: 10.1, 10.2, 11.1_
 
-- [ ] 2. Implement database models and migrations
+- [x] 2. Implement database models and migrations
+
+
+
+
+
   - Define Invoice model with all required fields and indexes
   - Define LineItem model with normalized_key field for price comparison
   - Define ComplianceFlag model with severity and flag_type fields
   - Create and run initial database migrations
   - _Requirements: 1.5, 2.3, 3.2, 4.2, 5.3, 6.3, 8.5_
 
-- [ ] 2b. Create management command for HSN data loading
+- [x] 2b. Create management command for HSN data loading
+
+
+
+
+
   - Create custom Django management command (e.g., python manage.py load_hsn_data)
   - Write script to parse GST_Goods_Rates.csv and GST_Services_Rates.csv files
   - Generate cached file (JSON or pickle) for analysis engine to load into memory
   - Document command usage in README
   - _Requirements: 5.1_
 
-- [ ] 3. Build authentication system
+- [x] 3. Build authentication system
+
+
+
+
+
   - Create user registration form and view
   - Create login page with custom template
   - Implement logout functionality
@@ -35,7 +50,13 @@
   - Create base template with navigation for authenticated users
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 4. Implement Gemini API integration service
+- [x] 4. Implement Gemini API integration service
+
+
+
+
+
+
   - Create gemini_service.py module in services directory
   - Implement extract_data_from_image function with structured prompt
   - Configure API key from environment variables
@@ -43,7 +64,12 @@
   - Test with sample invoice images to verify extraction accuracy
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 12.1_
 
-- [ ] 5. Build analysis engine for compliance checks
+- [x] 5. Build analysis engine for compliance checks
+
+
+
+
+
   - Create analysis_engine.py module in services directory
   - Implement run_all_checks orchestration function
   - Implement check_duplicates function to detect duplicate invoices
@@ -54,7 +80,12 @@
   - Implement check_price_outliers function with historical price comparison
   - _Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 6. Create invoice upload functionality
+- [x] 6. Create invoice upload functionality
+
+
+
+
+
   - Create upload modal UI component with drag-and-drop
   - Implement file upload view with validation (type, size)
   - Integrate gemini_service for data extraction
@@ -64,7 +95,12 @@
   - Add loading indicator for user feedback during processing
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 12.3_
 
-- [ ] 7. Build dashboard page with metrics and visualizations
+- [x] 7. Build dashboard page with metrics and visualizations
+
+
+
+
+
   - Create dashboard view with metrics calculation logic
   - Implement metrics card showing key statistics
   - Create donut chart component for anomaly breakdown
@@ -73,15 +109,25 @@
   - Style dashboard with Tailwind CSS following design specifications
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 11.1, 11.2, 11.3_
 
-- [ ] 8. Implement GST client for microservice communication
+- [x] 8. Implement GST client for microservice communication
+
+
+
+
+
   - Create gst_client.py module in services directory
   - Implement get_captcha function to request CAPTCHA from Flask service
   - Implement verify_gstin function to submit verification request
   - Add error handling for microservice unavailability
   - Configure GST microservice URL from environment variables
   - _Requirements: 8.3, 8.4, 9.4, 12.2_
+-
 
-- [ ] 9. Create GST verification page and workflow
+- [x] 9. Create GST verification page and workflow
+
+
+
+
   - Build GST verification page template with invoice table
   - Implement table with pagination (10 rows per page)
   - Add filter functionality (All, Pending, Verified, Failed)
@@ -91,7 +137,10 @@
   - Add status badges with color coding (green, yellow, red)
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5, 11.4, 11.5_
 
-- [ ] 10. Implement error handling and user feedback
+- [-] 10. Implement error handling and user feedback
+
+
+
   - Add try-catch blocks for Gemini API calls with retry logic
   - Implement error messages for GST microservice failures
   - Add validation error messages for file uploads
@@ -100,6 +149,7 @@
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5_
 
 - [ ] 11. Style application with Tailwind CSS
+
   - Create base template with sidebar and top bar navigation
   - Apply color palette (light grey, blue, purple, teal accents)
   - Style all cards, buttons, and form elements consistently
@@ -108,6 +158,7 @@
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
 - [ ] 12. Write unit tests for core functionality
+
   - Write tests for model validations and relationships
   - Write tests for gemini_service with mocked API responses
   - Write tests for analysis_engine functions with sample data
@@ -115,7 +166,9 @@
   - Write tests for gst_client with mocked microservice
   - _Requirements: All requirements (validation)_
 
-- [ ]* 13. Perform integration and manual testing
+- [ ] 13. Perform integration and manual testing
+
+
   - Test complete invoice upload and processing flow
   - Test GST verification workflow end-to-end
   - Test authentication and authorization flows
@@ -124,6 +177,8 @@
   - _Requirements: All requirements (validation)_
 
 - [ ] 14. Create deployment configuration
+
+
   - Set up environment variables template file
   - Create requirements.txt with all dependencies
   - Document process for running Django and Flask services

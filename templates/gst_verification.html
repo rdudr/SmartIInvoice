@@ -1,0 +1,554 @@
+{% extends 'base.html' %}
+
+{% block title %}GST Verification - Smart iInvoice{% endblock %}
+
+{% block page_title %}GST Verification{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Filter Controls -->
+    <div class="bg-white rounded-lg shadow-sm p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">Invoice List</h3>
+            <div class="text-sm text-gray-600">
+                Total: {{ total_count }} invoice{{ total_count|pluralize }}
+            </div>
+        </div>
+        
+        <!-- Filter Buttons -->
+        <div class="flex space-x-2">
+            <a href="?status=all" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'all' %}bg-primary text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                All
+            </a>
+            <a href="?status=pending" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'pending' %}bg-yellow-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                Pending Verification
+            </a>
+            <a href="?status=verified" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'verified' %}bg-green-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                Verified
+            </a>
+            <a href="?status=failed" class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {% if current_filter == 'failed' %}bg-red-500 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+                Verification Failed
+            </a>
+        </div>
+    </div>
+
+    <!-- Invoice Table -->
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        {% if page_obj.object_list %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Invoice Number
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Vendor Name
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Vendor GSTIN
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Date
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Verification Status
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Action
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for invoice in page_obj.object_list %}
+                            <tr class="hover:bg-gray-50" data-invoice-id="{{ invoice.id }}">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {{ invoice.invoice_id|default:"N/A" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {{ invoice.vendor_name|truncatechars:30 }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                                    {{ invoice.vendor_gstin|default:"N/A" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {{ invoice.invoice_date|date:"M d, Y"|default:"N/A" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full 
+                                        {% if invoice.gst_verification_status == 'VERIFIED' %}bg-green-100 text-green-800
+                                        {% elif invoice.gst_verification_status == 'FAILED' %}bg-red-100 text-red-800
+                                        {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                        {% if invoice.gst_verification_status == 'VERIFIED' %}
+                                            <i class="fas fa-check-circle mr-1"></i>Verified
+                                        {% elif invoice.gst_verification_status == 'FAILED' %}
+                                            <i class="fas fa-times-circle mr-1"></i>Failed
+                                        {% else %}
+                                            <i class="fas fa-clock mr-1"></i>Pending
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                    {% if invoice.gst_verification_status == 'PENDING' and invoice.vendor_gstin %}
+                                        <button onclick="startVerification({{ invoice.id }}, '{{ invoice.vendor_gstin }}')" 
+                                                class="verify-btn bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors">
+                                            <i class="fas fa-shield-alt mr-1"></i>Verify
+                                        </button>
+                                    {% elif not invoice.vendor_gstin %}
+                                        <span class="text-gray-400 text-sm">No GSTIN</span>
+                                    {% else %}
+                                        <span class="text-gray-400 text-sm">
+                                            {% if invoice.gst_verification_status == 'VERIFIED' %}Completed{% else %}Failed{% endif %}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+                <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                    <div class="flex-1 flex justify-between sm:hidden">
+                        {% if page_obj.has_previous %}
+                            <a href="?page={{ page_obj.previous_page_number }}{% if current_filter != 'all' %}&status={{ current_filter }}{% endif %}" 
+                               class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                Previous
+                            </a>
+                        {% endif %}
+                        {% if page_obj.has_next %}
+                            <a href="?page={{ page_obj.next_page_number }}{% if current_filter != 'all' %}&status={{ current_filter }}{% endif %}" 
+                               class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                Next
+                            </a>
+                        {% endif %}
+                    </div>
+                    <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                        <div>
+                            <p class="text-sm text-gray-700">
+                                Showing
+                                <span class="font-medium">{{ page_obj.start_index }}</span>
+                                to
+                                <span class="font-medium">{{ page_obj.end_index }}</span>
+                                of
+                                <span class="font-medium">{{ page_obj.paginator.count }}</span>
+                                results
+                            </p>
+                        </div>
+                        <div>
+                            <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                                {% if page_obj.has_previous %}
+                                    <a href="?page={{ page_obj.previous_page_number }}{% if current_filter != 'all' %}&status={{ current_filter }}{% endif %}" 
+                                       class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                                        <i class="fas fa-chevron-left"></i>
+                                    </a>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-primary text-sm font-medium text-white">
+                                            {{ num }}
+                                        </span>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <a href="?page={{ num }}{% if current_filter != 'all' %}&status={{ current_filter }}{% endif %}" 
+                                           class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                            {{ num }}
+                                        </a>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <a href="?page={{ page_obj.next_page_number }}{% if current_filter != 'all' %}&status={{ current_filter }}{% endif %}" 
+                                       class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </a>
+                                {% endif %}
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        {% else %}
+            <!-- Empty State -->
+            <div class="text-center py-12">
+                <i class="fas fa-file-invoice text-gray-300 text-6xl mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
+                <p class="text-gray-500">
+                    {% if current_filter != 'all' %}
+                        No invoices match the selected filter. <a href="?status=all" class="text-primary hover:underline">View all invoices</a>
+                    {% else %}
+                        Upload some invoices to get started with GST verification.
+                    {% endif %}
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- CAPTCHA Modal -->
+<div id="captchaModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">GST Verification</h3>
+                <button onclick="closeCaptchaModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- Modal Content -->
+            <div id="modalContent">
+                <!-- Loading State -->
+                <div id="loadingState" class="text-center py-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p class="text-gray-600">Requesting CAPTCHA...</p>
+                </div>
+                
+                <!-- CAPTCHA Form -->
+                <div id="captchaForm" class="hidden">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            GSTIN to verify:
+                        </label>
+                        <div id="gstinDisplay" class="px-3 py-2 bg-gray-50 border border-gray-300 rounded-md font-mono text-sm"></div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Enter CAPTCHA:
+                        </label>
+                        <div class="mb-3">
+                            <img id="captchaImage" src="" alt="CAPTCHA" class="border border-gray-300 rounded-md mx-auto" />
+                        </div>
+                        <input type="text" id="captchaInput" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                               placeholder="Enter CAPTCHA text" maxlength="10" />
+                    </div>
+                    
+                    <div class="flex space-x-3">
+                        <button onclick="submitVerification()" 
+                                class="flex-1 bg-primary text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                            <i class="fas fa-check mr-1"></i>Verify
+                        </button>
+                        <button onclick="refreshCaptcha()" 
+                                class="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
+                            <i class="fas fa-refresh mr-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Error State -->
+                <div id="errorState" class="hidden text-center py-4">
+                    <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
+                    <p id="errorMessage" class="text-red-600 mb-4"></p>
+                    <button onclick="closeCaptchaModal()" 
+                            class="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+<div id="messageContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+<script>
+let currentInvoiceId = null;
+let currentSessionId = null;
+let currentGstin = null;
+
+function startVerification(invoiceId, gstin) {
+    currentInvoiceId = invoiceId;
+    currentGstin = gstin;
+    
+    // Show modal and loading state
+    document.getElementById('captchaModal').classList.remove('hidden');
+    document.getElementById('loadingState').classList.remove('hidden');
+    document.getElementById('captchaForm').classList.add('hidden');
+    document.getElementById('errorState').classList.add('hidden');
+    
+    // Update GSTIN display
+    document.getElementById('gstinDisplay').textContent = gstin;
+    
+    // Request CAPTCHA
+    requestCaptcha();
+}
+
+function requestCaptcha() {
+    fetch('{% url "request_captcha" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            currentSessionId = data.sessionId;
+            document.getElementById('captchaImage').src = data.captchaImage;
+            document.getElementById('captchaInput').value = '';
+            
+            // Show CAPTCHA form
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('captchaForm').classList.remove('hidden');
+            document.getElementById('captchaInput').focus();
+        } else {
+            let errorMessage = data.error || 'Failed to load CAPTCHA';
+            
+            // Handle specific error codes
+            if (data.error_code) {
+                switch (data.error_code) {
+                    case 'GST_SERVICE_UNAVAILABLE':
+                    case 'SERVICE_UNAVAILABLE':
+                        errorMessage = 'GST verification service is temporarily unavailable. Please try again in a few minutes.';
+                        break;
+                    case 'SERVICE_TIMEOUT':
+                        errorMessage = 'Request timed out. Please check your connection and try again.';
+                        break;
+                    case 'INVALID_RESPONSE':
+                        errorMessage = 'Invalid response from GST service. Please try again.';
+                        break;
+                }
+            }
+            
+            showError(errorMessage);
+        }
+    })
+    .catch(error => {
+        console.error('Error requesting CAPTCHA:', error);
+        
+        let errorMessage = 'Network error while requesting CAPTCHA';
+        if (error.message.includes('503')) {
+            errorMessage = 'GST verification service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('500')) {
+            errorMessage = 'Server error. Please try again in a few minutes.';
+        }
+        
+        showError(errorMessage);
+    });
+}
+
+function refreshCaptcha() {
+    document.getElementById('captchaForm').classList.add('hidden');
+    document.getElementById('loadingState').classList.remove('hidden');
+    requestCaptcha();
+}
+
+function submitVerification() {
+    const captchaText = document.getElementById('captchaInput').value.trim();
+    
+    if (!captchaText) {
+        showMessage('Please enter the CAPTCHA text', 'error');
+        return;
+    }
+    
+    // Disable form during submission
+    const submitBtn = event.target;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Verifying...';
+    
+    fetch('{% url "verify_gst" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            invoice_id: currentInvoiceId,
+            session_id: currentSessionId,
+            captcha: captchaText
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Update status in table
+            updateInvoiceStatus(currentInvoiceId, data.new_status);
+            showMessage('GST verification completed successfully!', 'success');
+            closeCaptchaModal();
+        } else {
+            let errorMessage = data.error || 'Verification failed';
+            
+            // Handle specific error codes for better user experience
+            if (data.error_code) {
+                switch (data.error_code) {
+                    case 'CAPTCHA_FAILED':
+                        errorMessage = 'CAPTCHA verification failed. Please try again with a new CAPTCHA.';
+                        // Auto-refresh CAPTCHA for user convenience
+                        setTimeout(() => {
+                            refreshCaptcha();
+                        }, 2000);
+                        break;
+                    case 'INVALID_GSTIN':
+                        errorMessage = 'The GSTIN appears to be invalid or not registered with GST authorities.';
+                        break;
+                    case 'SESSION_EXPIRED':
+                        errorMessage = 'Session expired. Please request a new CAPTCHA and try again.';
+                        setTimeout(() => {
+                            refreshCaptcha();
+                        }, 2000);
+                        break;
+                    case 'VERIFICATION_TIMEOUT':
+                        errorMessage = 'Verification request timed out. Please try again.';
+                        break;
+                    case 'VERIFICATION_SERVICE_ERROR':
+                        errorMessage = 'GST verification service is temporarily unavailable. Please try again later.';
+                        break;
+                }
+            }
+            
+            showError(errorMessage);
+        }
+    })
+    .catch(error => {
+        console.error('Error during verification:', error);
+        
+        let errorMessage = 'Network error during verification';
+        if (error.message.includes('503')) {
+            errorMessage = 'GST verification service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('500')) {
+            errorMessage = 'Server error during verification. Please try again.';
+        } else if (error.message.includes('400')) {
+            errorMessage = 'Invalid verification request. Please try again with a new CAPTCHA.';
+        }
+        
+        showError(errorMessage);
+    })
+    .finally(() => {
+        // Re-enable form
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Verify';
+    });
+}
+
+function updateInvoiceStatus(invoiceId, newStatus) {
+    const row = document.querySelector(`tr[data-invoice-id="${invoiceId}"]`);
+    if (row) {
+        const statusCell = row.querySelector('.status-badge');
+        const actionCell = row.querySelector('.verify-btn');
+        
+        if (statusCell) {
+            let statusClass, statusIcon, statusText;
+            
+            if (newStatus === 'VERIFIED') {
+                statusClass = 'bg-green-100 text-green-800';
+                statusIcon = 'fas fa-check-circle';
+                statusText = 'Verified';
+            } else if (newStatus === 'FAILED') {
+                statusClass = 'bg-red-100 text-red-800';
+                statusIcon = 'fas fa-times-circle';
+                statusText = 'Failed';
+            }
+            
+            statusCell.className = `status-badge inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusClass}`;
+            statusCell.innerHTML = `<i class="${statusIcon} mr-1"></i>${statusText}`;
+        }
+        
+        if (actionCell) {
+            actionCell.parentElement.innerHTML = '<span class="text-gray-400 text-sm">Completed</span>';
+        }
+    }
+}
+
+function showError(message) {
+    document.getElementById('loadingState').classList.add('hidden');
+    document.getElementById('captchaForm').classList.add('hidden');
+    document.getElementById('errorState').classList.remove('hidden');
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function closeCaptchaModal() {
+    document.getElementById('captchaModal').classList.add('hidden');
+    currentInvoiceId = null;
+    currentSessionId = null;
+    currentGstin = null;
+}
+
+function showMessage(message, type = 'info') {
+    const container = document.getElementById('messageContainer');
+    const messageDiv = document.createElement('div');
+    
+    let bgColor, textColor, icon;
+    if (type === 'success') {
+        bgColor = 'bg-green-50';
+        textColor = 'text-green-700';
+        icon = 'fas fa-check-circle';
+    } else if (type === 'error') {
+        bgColor = 'bg-red-50';
+        textColor = 'text-red-700';
+        icon = 'fas fa-exclamation-circle';
+    } else {
+        bgColor = 'bg-blue-50';
+        textColor = 'text-blue-700';
+        icon = 'fas fa-info-circle';
+    }
+    
+    messageDiv.className = `${bgColor} ${textColor} border border-current border-opacity-20 rounded-md p-4 mb-2 shadow-sm`;
+    messageDiv.innerHTML = `
+        <div class="flex items-center">
+            <i class="${icon} mr-2"></i>
+            <span>${message}</span>
+            <button onclick="this.parentElement.parentElement.remove()" class="ml-auto text-current opacity-70 hover:opacity-100">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    container.appendChild(messageDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (messageDiv.parentElement) {
+            messageDiv.remove();
+        }
+    }, 5000);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Handle Enter key in CAPTCHA input
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('captchaInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            submitVerification();
+        }
+    });
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeCaptchaModal();
+    }
+});
+</script>
+{% endblock %}

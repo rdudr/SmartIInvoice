@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Error - Smart iInvoice{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#5B8DEF',
+                        'secondary': '#8B7FE8',
+                        'accent': '#4ECDC4',
+                        'bg-light': '#F5F7FA'
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-bg-light min-h-screen flex items-center justify-center">
+    <div class="max-w-md w-full mx-auto">
+        <div class="bg-white rounded-lg shadow-lg p-8 text-center">
+            <!-- Error Icon -->
+            <div class="mb-6">
+                {% block error_icon %}
+                <i class="fas fa-exclamation-triangle text-6xl text-red-500"></i>
+                {% endblock %}
+            </div>
+            
+            <!-- Error Title -->
+            <h1 class="text-2xl font-bold text-gray-900 mb-4">
+                {% block error_title %}{{ error_title|default:"An Error Occurred" }}{% endblock %}
+            </h1>
+            
+            <!-- Error Message -->
+            <p class="text-gray-600 mb-6">
+                {% block error_message %}{{ error_message|default:"Something went wrong. Please try again." }}{% endblock %}
+            </p>
+            
+            <!-- Error Code -->
+            {% if error_code %}
+            <p class="text-sm text-gray-400 mb-6">Error Code: {{ error_code }}</p>
+            {% endif %}
+            
+            <!-- Action Buttons -->
+            <div class="space-y-3">
+                {% block action_buttons %}
+                <a href="{% url 'dashboard' %}" 
+                   class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <i class="fas fa-home mr-2"></i>
+                    Go to Dashboard
+                </a>
+                
+                <button onclick="history.back()" 
+                        class="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Go Back
+                </button>
+                {% endblock %}
+            </div>
+            
+            <!-- Additional Help -->
+            {% block additional_help %}
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <p class="text-sm text-gray-500">
+                    Need help? <a href="mailto:support@smartinvoice.com" class="text-primary hover:underline">Contact Support</a>
+                </p>
+            </div>
+            {% endblock %}
+        </div>
+    </div>
+</body>
+</html>

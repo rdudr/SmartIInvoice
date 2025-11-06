@@ -1,0 +1,573 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Smart iInvoice{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Welcome Message -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-2">
+            Welcome back, {{ user.get_full_name|default:user.username }}!
+        </h3>
+        <p class="text-gray-600">
+            Your Smart iInvoice dashboard is ready. Upload invoices to get started with automated compliance checking.
+        </p>
+    </div>
+
+    <!-- Metrics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Invoices Awaiting Verification -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
+                        <i class="fas fa-clock text-white"></i>
+                    </div>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">
+                            Invoices Awaiting Verification
+                        </dt>
+                        <dd class="text-lg font-medium text-gray-900">
+                            {{ metrics.invoices_awaiting_verification }}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <!-- Anomalies Found This Week -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-red-500 rounded-md flex items-center justify-center">
+                        <i class="fas fa-exclamation-triangle text-white"></i>
+                    </div>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">
+                            Anomalies Found This Week
+                        </dt>
+                        <dd class="text-lg font-medium text-gray-900">
+                            {{ metrics.anomalies_this_week }}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total Amount Processed -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-8 h-8 bg-accent rounded-md flex items-center justify-center">
+                        <i class="fas fa-rupee-sign text-white"></i>
+                    </div>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                    <dl>
+                        <dt class="text-sm font-medium text-gray-500 truncate">
+                            Total Amount Processed
+                        </dt>
+                        <dd class="text-lg font-medium text-gray-900">
+                            ₹{{ metrics.total_amount_processed|floatformat:2 }}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts and Activity Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Anomaly Breakdown Donut Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Anomaly Breakdown</h3>
+                <button class="text-sm text-primary hover:text-blue-700">View Report</button>
+            </div>
+            
+            {% if anomaly_breakdown %}
+                <div class="flex items-center justify-center">
+                    <div class="relative w-48 h-48">
+                        <canvas id="anomaly-chart" width="192" height="192"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="mt-4 space-y-2">
+                    {% for item in anomaly_breakdown %}
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <div class="w-3 h-3 rounded-full mr-2 anomaly-legend-color" data-type="{{ item.flag_type }}"></div>
+                                <span class="text-sm text-gray-600">{{ item.flag_type|title }}</span>
+                            </div>
+                            <span class="text-sm font-medium text-gray-900">{{ item.count }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="flex flex-col items-center justify-center py-8">
+                    <i class="fas fa-chart-pie text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500 text-center">No anomalies found yet.<br>Upload invoices to see compliance analysis.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Recent Activity</h3>
+                <button class="text-sm text-primary hover:text-blue-700">View All</button>
+            </div>
+            
+            {% if recent_invoices %}
+                <div class="space-y-3">
+                    {% for invoice in recent_invoices %}
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    {% if invoice.status == 'CLEARED' %}
+                                        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-check text-white text-xs"></i>
+                                        </div>
+                                    {% elif invoice.status == 'HAS_ANOMALIES' %}
+                                        <div class="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-exclamation text-white text-xs"></i>
+                                        </div>
+                                    {% else %}
+                                        <div class="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-clock text-white text-xs"></i>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm font-medium text-gray-900">{{ invoice.vendor_name }}</p>
+                                    <p class="text-xs text-gray-500">{{ invoice.invoice_id }} • {{ invoice.uploaded_at|date:"M d, Y" }}</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-medium text-gray-900">₹{{ invoice.grand_total|floatformat:2 }}</p>
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium
+                                    {% if invoice.status == 'CLEARED' %}bg-green-100 text-green-800
+                                    {% elif invoice.status == 'HAS_ANOMALIES' %}bg-red-100 text-red-800
+                                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                    {{ invoice.get_status_display }}
+                                </span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="flex flex-col items-center justify-center py-8">
+                    <i class="fas fa-file-invoice text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500 text-center">No invoices uploaded yet.<br>Start by uploading your first invoice.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Suspected Invoices List -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900">Suspected Invoices</h3>
+            <button class="text-sm text-primary hover:text-blue-700">View All</button>
+        </div>
+        
+        {% if suspected_invoices %}
+            <div class="overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Critical Flags</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for invoice in suspected_invoices %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <div class="w-2 h-2 bg-red-500 rounded-full mr-3"></div>
+                                        <span class="text-sm font-medium text-gray-900">{{ invoice.invoice_id }}</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ invoice.vendor_name }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{{ invoice.grand_total|floatformat:2 }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        {{ invoice.critical_flags_count }} Critical
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ invoice.uploaded_at|date:"M d, Y" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="flex flex-col items-center justify-center py-8">
+                <i class="fas fa-shield-alt text-4xl text-green-300 mb-4"></i>
+                <p class="text-gray-500 text-center">No critical compliance issues found.<br>All invoices are looking good!</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Upload Section -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
+        <div class="flex space-x-4">
+            <button id="upload-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <i class="fas fa-upload mr-2"></i>
+                Upload Invoice
+            </button>
+            <button class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <i class="fas fa-file-invoice mr-2"></i>
+                View All Invoices
+            </button>
+        </div>
+    </div>
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Upload Invoice</h3>
+                <button id="close-modal" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- Upload Area -->
+            <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer">
+                <div id="upload-content">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-sm text-gray-600 mb-2">
+                        <span class="font-medium text-primary">Click to upload</span> or drag and drop
+                    </p>
+                    <p class="text-xs text-gray-500">PNG, JPG, JPEG or PDF (max. 10MB)</p>
+                </div>
+                
+                <!-- Loading State -->
+                <div id="upload-loading" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                        <p class="text-sm text-gray-600">Processing invoice...</p>
+                        <p class="text-xs text-gray-500 mt-1">This may take a few moments</p>
+                    </div>
+                </div>
+                
+                <!-- Success State -->
+                <div id="upload-success" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-check-circle text-4xl text-green-500 mb-4"></i>
+                        <p class="text-sm text-gray-600 mb-2">Invoice uploaded successfully!</p>
+                        <p id="success-details" class="text-xs text-gray-500"></p>
+                    </div>
+                </div>
+                
+                <!-- Error State -->
+                <div id="upload-error" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-exclamation-triangle text-4xl text-red-500 mb-4"></i>
+                        <p class="text-sm text-gray-600 mb-2">Upload failed</p>
+                        <p id="error-details" class="text-xs text-red-500"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hidden File Input -->
+            <form id="upload-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" id="file-input" name="invoice_file" accept=".png,.jpg,.jpeg,.pdf" class="hidden">
+            </form>
+            
+            <!-- Modal Actions -->
+            <div class="flex justify-end space-x-3 mt-6">
+                <button id="cancel-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Cancel
+                </button>
+                <button id="retry-btn" class="hidden px-4 py-2 text-sm font-medium text-white bg-primary border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Try Again
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Donut Chart for Anomaly Breakdown
+    const anomalyChart = document.getElementById('anomaly-chart');
+    if (anomalyChart && {{ anomaly_breakdown|length }} > 0) {
+        const anomalyData = {{ anomaly_breakdown|safe }};
+        
+        // Define colors for different flag types
+        const flagColors = {
+            'DUPLICATE': '#EF4444',        // Red
+            'ARITHMETIC_ERROR': '#F59E0B', // Amber
+            'HSN_MISMATCH': '#8B5CF6',     // Purple
+            'UNKNOWN_HSN': '#6B7280',      // Gray
+            'PRICE_ANOMALY': '#EC4899',    // Pink
+            'SYSTEM_ERROR': '#374151'      // Dark Gray
+        };
+        
+        const labels = anomalyData.map(item => item.flag_type.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase()));
+        const data = anomalyData.map(item => item.count);
+        const colors = anomalyData.map(item => flagColors[item.flag_type] || '#6B7280');
+        
+        new Chart(anomalyChart, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${context.label}: ${context.parsed} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+        
+        // Set legend colors
+        document.querySelectorAll('.anomaly-legend-color').forEach(element => {
+            const flagType = element.getAttribute('data-type');
+            element.style.backgroundColor = flagColors[flagType] || '#6B7280';
+        });
+    }
+    
+    // Modal elements
+    const modal = document.getElementById('upload-modal');
+    const uploadBtn = document.getElementById('upload-btn');
+    const closeModal = document.getElementById('close-modal');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const retryBtn = document.getElementById('retry-btn');
+    
+    // Upload elements
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('file-input');
+    const uploadForm = document.getElementById('upload-form');
+    
+    // State elements
+    const uploadContent = document.getElementById('upload-content');
+    const uploadLoading = document.getElementById('upload-loading');
+    const uploadSuccess = document.getElementById('upload-success');
+    const uploadError = document.getElementById('upload-error');
+    const successDetails = document.getElementById('success-details');
+    const errorDetails = document.getElementById('error-details');
+    
+    // Open modal
+    uploadBtn.addEventListener('click', function() {
+        modal.classList.remove('hidden');
+        resetModal();
+    });
+    
+    // Close modal
+    function closeModalHandler() {
+        modal.classList.add('hidden');
+        resetModal();
+    }
+    
+    closeModal.addEventListener('click', closeModalHandler);
+    cancelBtn.addEventListener('click', closeModalHandler);
+    
+    // Close modal when clicking outside
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeModalHandler();
+        }
+    });
+    
+    // Reset modal to initial state
+    function resetModal() {
+        uploadContent.classList.remove('hidden');
+        uploadLoading.classList.add('hidden');
+        uploadSuccess.classList.add('hidden');
+        uploadError.classList.add('hidden');
+        retryBtn.classList.add('hidden');
+        fileInput.value = '';
+        uploadArea.classList.remove('border-red-300', 'border-green-300');
+        uploadArea.classList.add('border-gray-300');
+    }
+    
+    // Retry upload
+    retryBtn.addEventListener('click', function() {
+        resetModal();
+    });
+    
+    // File input change
+    fileInput.addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            uploadFile(e.target.files[0]);
+        }
+    });
+    
+    // Drag and drop functionality
+    uploadArea.addEventListener('click', function() {
+        fileInput.click();
+    });
+    
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('border-primary', 'bg-blue-50');
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('border-primary', 'bg-blue-50');
+    });
+    
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('border-primary', 'bg-blue-50');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            fileInput.files = files;
+            uploadFile(files[0]);
+        }
+    });
+    
+    // Upload file function
+    function uploadFile(file) {
+        // Show loading state
+        uploadContent.classList.add('hidden');
+        uploadLoading.classList.remove('hidden');
+        uploadArea.classList.remove('border-gray-300');
+        uploadArea.classList.add('border-blue-300');
+        
+        // Create FormData
+        const formData = new FormData();
+        formData.append('invoice_file', file);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        
+        // Upload file
+        fetch('{% url "upload_invoice" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            // Check if response is ok
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            uploadLoading.classList.add('hidden');
+            
+            if (data.success) {
+                // Show success state
+                uploadSuccess.classList.remove('hidden');
+                uploadArea.classList.remove('border-blue-300');
+                uploadArea.classList.add('border-green-300');
+                
+                const invoice = data.invoice;
+                successDetails.textContent = `${invoice.vendor_name} - ₹${invoice.grand_total} (${invoice.line_items_count} items)`;
+                
+                // Auto-close modal after 3 seconds
+                setTimeout(() => {
+                    closeModalHandler();
+                    // Optionally refresh the page to show updated dashboard
+                    window.location.reload();
+                }, 3000);
+                
+            } else {
+                // Show error state with detailed error handling
+                uploadError.classList.remove('hidden');
+                uploadArea.classList.remove('border-blue-300');
+                uploadArea.classList.add('border-red-300');
+                retryBtn.classList.remove('hidden');
+                
+                // Display user-friendly error message
+                let errorMessage = data.error || 'Upload failed';
+                if (data.details) {
+                    errorMessage += ': ' + data.details;
+                }
+                
+                // Handle specific error codes
+                if (data.error_code) {
+                    switch (data.error_code) {
+                        case 'VALIDATION_ERROR':
+                            errorMessage = 'File validation failed. Please check the file format and size.';
+                            break;
+                        case 'NOT_AN_INVOICE':
+                            errorMessage = 'This file does not appear to be an invoice. Please upload a clear invoice image or PDF.';
+                            break;
+                        case 'EXTRACTION_SERVICE_ERROR':
+                            errorMessage = 'Invoice processing service is temporarily unavailable. Please try again in a few minutes.';
+                            break;
+                        case 'INCOMPLETE_EXTRACTION':
+                            errorMessage = 'Could not extract essential information from the invoice. Please ensure the image is clear and complete.';
+                            break;
+                        case 'DATABASE_ERROR':
+                            errorMessage = 'Failed to save invoice data. Please try again.';
+                            break;
+                        case 'MEMORY_ERROR':
+                            errorMessage = 'File is too large to process. Please upload a smaller file.';
+                            break;
+                    }
+                }
+                
+                errorDetails.textContent = errorMessage;
+            }
+        })
+        .catch(error => {
+            console.error('Upload error:', error);
+            uploadLoading.classList.add('hidden');
+            uploadError.classList.remove('hidden');
+            uploadArea.classList.remove('border-blue-300');
+            uploadArea.classList.add('border-red-300');
+            retryBtn.classList.remove('hidden');
+            
+            // Provide specific error messages based on error type
+            let errorMessage = 'Network error. Please check your connection and try again.';
+            
+            if (error.message.includes('413')) {
+                errorMessage = 'File is too large. Please upload a file smaller than 10MB.';
+            } else if (error.message.includes('400')) {
+                errorMessage = 'Invalid file or request. Please check your file and try again.';
+            } else if (error.message.includes('500')) {
+                errorMessage = 'Server error. Please try again in a few minutes.';
+            } else if (error.message.includes('503')) {
+                errorMessage = 'Service temporarily unavailable. Please try again later.';
+            }
+            
+            errorDetails.textContent = errorMessage;
+        });
+    }
+});
+</script>
+{% endblock %}

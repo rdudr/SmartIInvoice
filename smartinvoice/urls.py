@@ -19,8 +19,14 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+# Custom error handlers
+handler404 = 'invoice_processor.views.handler404'
+handler500 = 'invoice_processor.views.handler500'
+handler403 = 'invoice_processor.views.handler403'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('accounts/', include('django.contrib.auth.urls')),  # Built-in auth URLs (login, logout, etc.)
     path('', include('invoice_processor.urls')),
 ]
 
