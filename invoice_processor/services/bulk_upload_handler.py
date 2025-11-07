@@ -73,12 +73,15 @@ class BulkUploadHandler:
                 
                 # Create Invoice records and queue processing tasks
                 queued_count = 0
+                from datetime import date
+                
                 for file in files:
                     try:
                         # Create Invoice record with minimal data
+                        # Use today's date as placeholder since invoice_date is required
                         invoice = Invoice.objects.create(
                             invoice_id='PENDING',  # Will be updated during processing
-                            invoice_date=None,  # Will be extracted during processing
+                            invoice_date=date.today(),  # Placeholder - will be extracted during processing
                             vendor_name='Processing...',  # Will be extracted during processing
                             vendor_gstin='',
                             billed_company_gstin='',

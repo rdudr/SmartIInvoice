@@ -22,9 +22,9 @@ set "NC=[0m"
 REM Create logs directory
 if not exist "logs" mkdir logs
 
-REM Set log file with timestamp
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
-set LOG_FILE=logs\run_%datetime:~0,8%_%datetime:~8,6%.log
+REM Set log file with timestamp (PowerShell method - works on all Windows versions)
+for /f "tokens=*" %%a in ('powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"') do set TIMESTAMP=%%a
+set LOG_FILE=logs\run_%TIMESTAMP%.log
 
 echo %CYAN%============================================================================%NC%
 echo %CYAN%           Smart iInvoice - Application Launcher%NC%
@@ -88,7 +88,7 @@ if errorlevel 1 (
     call :log "Attempting to start Redis..."
     
     REM Try to start Redis in background
-    start /B redis-server --port 6379 >> "logs\redis_%datetime:~0,8%_%datetime:~8,6%.log" 2>&1
+    start /B redis-server --port 6379 >> "logs\redis_%TIMESTAMP%.log" 2>&1
     
     REM Wait a moment for Redis to start
     timeout /t 2 /nobreak >nul
@@ -113,7 +113,7 @@ REM Step 4: Start GST Verification Service
 REM ============================================================================
 call :log "Step 4: Starting GST Verification Service..."
 
-set GST_LOG=logs\gst_service_%datetime:~0,8%_%datetime:~8,6%.log
+set GST_LOG=logs\gst_service_%TIMESTAMP%.log
 call :log "GST Service log: !GST_LOG!"
 
 REM Check if GST service directory exists
@@ -147,7 +147,7 @@ REM ============================================================================
 if !REDIS_RUNNING!==1 (
     call :log "Step 5: Starting Celery worker..."
     
-    set CELERY_LOG=logs\celery_%datetime:~0,8%_%datetime:~8,6%.log
+    set CELERY_LOG=logs\celery_%TIMESTAMP%.log
     call :log "Celery log: !CELERY_LOG!"
     
     start "Celery Worker" cmd /c "venv\Scripts\activate.bat && celery -A smart_invoice worker --loglevel=info --pool=solo > !CELERY_LOG! 2>&1"
@@ -185,7 +185,7 @@ REM Step 7: Start Django Development Server
 REM ============================================================================
 call :log "Step 7: Starting Django development server..."
 
-set DJANGO_LOG=logs\django_%datetime:~0,8%_%datetime:~8,6%.log
+set DJANGO_LOG=logs\django_%TIMESTAMP%.log
 call :log "Django log: !DJANGO_LOG!"
 
 REM Start Django in a new window
@@ -240,7 +240,7 @@ echo   - Django log:    !DJANGO_LOG!
 echo   - GST log:       !GST_LOG!
 if !REDIS_RUNNING!==1 (
     echo   - Celery log:    !CELERY_LOG!
-    echo   - Redis log:     logs\redis_%datetime:~0,8%_%datetime:~8,6%.log
+    echo   - Redis log:     logs\redis_%TIMESTAMP%.log
 )
 echo.
 echo %CYAN%Useful URLs:%NC%

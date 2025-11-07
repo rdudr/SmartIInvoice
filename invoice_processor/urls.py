@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/refresh-gst-cache/', views.refresh_gst_cache_entry, name='refresh_gst_cache_entry'),
     path('api/bulk-upload/', views.bulk_upload_invoices, name='bulk_upload_invoices'),
     path('api/batch-status/<str:batch_id>/', views.get_batch_status, name='get_batch_status'),
+    path('api/dashboard-analytics/', views.dashboard_analytics_api, name='dashboard_analytics_api'),
     path('api/delete-profile-picture/', views.delete_profile_picture, name='delete_profile_picture'),
     path('export/invoices/', views.export_invoices, name='export_invoices'),
     path('export/gst-cache/', views.export_gst_cache, name='export_gst_cache'),

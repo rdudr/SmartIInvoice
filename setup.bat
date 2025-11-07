@@ -22,9 +22,9 @@ set "NC=[0m"
 REM Create logs directory
 if not exist "logs" mkdir logs
 
-REM Set log file with timestamp
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
-set LOG_FILE=logs\setup_%datetime:~0,8%_%datetime:~8,6%.log
+REM Set log file with timestamp (PowerShell method - works on all Windows versions)
+for /f "tokens=*" %%a in ('powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"') do set TIMESTAMP=%%a
+set LOG_FILE=logs\setup_%TIMESTAMP%.log
 
 echo %BLUE%============================================================================%NC%
 echo %BLUE%           Smart iInvoice - Automated Setup Script%NC%

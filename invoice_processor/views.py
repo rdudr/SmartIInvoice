@@ -140,6 +140,65 @@ def dashboard(request):
     return render(request, 'dashboard.html', context)
 
 
+@login_required
+@require_http_methods(["GET"])
+def dashboard_analytics_api(request):
+    """
+    API endpoint for dashboard analytics data
+    Used for dynamic updates without page reload
+    """
+    try:
+        # Get days filter from query params
+        days_filter = int(request.GET.get('days', 7))
+        # Clamp between 5 and 14 days
+        days_filter = max(5, min(14, days_filter))
+        
+        # Get analytics data
+        invoice_per_day_data = dashboard_analytics_service.get_invoice_per_day_data(
+            request.user, 
+            days=days_filter
+        )
+        
+        money_flow_data = dashboard_analytics_service.get_money_flow_by_hsn(request.user)
+        company_leaderboard = dashboard_analytics_service.get_company_leaderboard(request.user)
+        red_flag_list = dashboard_analytics_service.get_red_flag_list(request.user)
+        
+        # Get metrics
+        one_week_ago = timezone.now() - timedelta(days=7)
+        invoices_awaiting_verification = Invoice.objects.filter(
+            uploaded_by=request.user,
+            gst_verification_status='PENDING'
+        ).count()
+        
+        anomalies_this_week = ComplianceFlag.objects.filter(
+            invoice__uploaded_by=request.user,
+            invoice__uploaded_at__gte=one_week_ago
+        ).count()
+        
+        total_amount = Invoice.objects.filter(
+            uploaded_by=request.user
+        ).aggregate(total=Sum('grand_total'))['total'] or 0
+        
+        return JsonResponse({
+            'success': True,
+            'metrics': {
+                'invoices_awaiting_verification': invoices_awaiting_verification,
+                'anomalies_this_week': anomalies_this_week,
+                'total_amount_processed': float(total_amount),
+            },
+            'invoice_per_day_data': invoice_per_day_data,
+            'money_flow_data': money_flow_data,
+            'company_leaderboard': company_leaderboard,
+            'red_flag_list': red_flag_list,
+        })
+    except Exception as e:
+        logger.error(f"Error in dashboard analytics API: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Failed to fetch analytics data'
+        }, status=500)
+
+
 def login_view(request):
     """Custom login view with styled form"""
     if request.user.is_authenticated:
