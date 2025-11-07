@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}Coming Soon - Smart iInvoice{% endblock %}
+
+{% block page_title %}Coming Soon{% endblock %}
+{% block page_subtitle %}Exciting features in development{% endblock %}
+
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center">
+    <div class="max-w-2xl w-full mx-auto">
+        <!-- Coming Soon Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-8 sm:p-12 text-center animate-fade-in">
+            <!-- Icon -->
+            <div class="mb-6">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary to-secondary rounded-full shadow-lg">
+                    <i class="fas fa-rocket text-white text-3xl"></i>
+                </div>
+            </div>
+            
+            <!-- Heading -->
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+                This feature is coming soon!
+            </h1>
+            
+            <!-- Feature Name Badge -->
+            {% if feature_name and feature_name != 'This feature' %}
+            <div class="mb-6">
+                <span class="inline-block px-4 py-2 bg-blue-100 text-primary font-semibold rounded-full text-sm">
+                    {{ feature_name }}
+                </span>
+            </div>
+            {% endif %}
+            
+            <!-- Description -->
+            <p class="text-lg text-gray-600 mb-8 leading-relaxed">
+                {{ description }}
+            </p>
+            
+            <!-- Progress Indicator -->
+            <div class="mb-8">
+                <div class="flex items-center justify-center space-x-2 text-sm text-gray-500 mb-3">
+                    <i class="fas fa-code text-primary"></i>
+                    <span>Currently in development</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div class="bg-gradient-to-r from-primary to-secondary h-2 rounded-full animate-pulse-slow" style="width: 60%"></div>
+                </div>
+            </div>
+            
+            <!-- Features Preview -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <i class="fas fa-check-circle text-green-500 text-xl mb-2"></i>
+                    <p class="text-sm text-gray-700 font-medium">Powerful</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <i class="fas fa-check-circle text-green-500 text-xl mb-2"></i>
+                    <p class="text-sm text-gray-700 font-medium">User-Friendly</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <i class="fas fa-check-circle text-green-500 text-xl mb-2"></i>
+                    <p class="text-sm text-gray-700 font-medium">Efficient</p>
+                </div>
+            </div>
+            
+            <!-- Email Notification Signup -->
+            <div class="mb-8 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">
+                    <i class="fas fa-bell text-primary mr-2"></i>
+                    Get Notified When This Feature Launches
+                </h3>
+                
+                {% if signup_success %}
+                    <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center text-green-700">
+                            <i class="fas fa-check-circle text-xl mr-3"></i>
+                            <div>
+                                <p class="font-semibold">You're all set!</p>
+                                <p class="text-sm">We'll notify you when this feature is ready.</p>
+                            </div>
+                        </div>
+                    </div>
+                {% else %}
+                    <p class="text-sm text-gray-600 mb-4">
+                        Be the first to know when this feature becomes available. We'll send you a one-time notification.
+                    </p>
+                    
+                    {% if signup_error %}
+                        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                            <i class="fas fa-exclamation-circle mr-2"></i>
+                            {{ signup_error }}
+                        </div>
+                    {% endif %}
+                    
+                    <form method="post" class="flex flex-col sm:flex-row gap-3">
+                        {% csrf_token %}
+                        <input 
+                            type="email" 
+                            name="notification_email" 
+                            placeholder="Enter your email address" 
+                            value="{{ user.email }}"
+                            class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                            required
+                        >
+                        <button 
+                            type="submit" 
+                            class="px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-opacity-90 transition-all duration-200 whitespace-nowrap"
+                        >
+                            <i class="fas fa-paper-plane mr-2"></i>
+                            Notify Me
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+            
+            <!-- Return Button -->
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                <a href="{% url 'dashboard' %}" class="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-primary to-secondary text-white font-semibold rounded-lg shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Return to Dashboard
+                </a>
+                <button onclick="window.history.back()" class="inline-flex items-center justify-center px-6 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-all duration-200">
+                    <i class="fas fa-chevron-left mr-2"></i>
+                    Go Back
+                </button>
+            </div>
+            
+            <!-- Additional Info -->
+            <div class="mt-8 pt-8 border-t border-gray-200">
+                <p class="text-sm text-gray-500">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Have questions or suggestions? Contact our support team.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

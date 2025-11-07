@@ -256,3 +256,24 @@ class APIKeyUsage(models.Model):
     def __str__(self):
         status = "Active" if self.is_active else "Exhausted"
         return f"API Key {self.key_hash[:8]}... - {status}"
+
+
+class FeatureNotificationSignup(models.Model):
+    """Store email signups for feature launch notifications"""
+    email = models.EmailField(max_length=255)
+    feature_name = models.CharField(max_length=100)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    signed_up_at = models.DateTimeField(auto_now_add=True)
+    notified = models.BooleanField(default=False)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['feature_name', 'notified']),
+            models.Index(fields=['email']),
+        ]
+        unique_together = ['email', 'feature_name']
+        verbose_name = 'Feature Notification Signup'
+        verbose_name_plural = 'Feature Notification Signups'
+    
+    def __str__(self):
+        return f"{self.email} - {self.feature_name}"

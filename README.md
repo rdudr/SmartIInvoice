@@ -175,14 +175,202 @@ For development, make sure to:
 
 ## Phase 2 Features
 
-Phase 2 introduces advanced features including:
-- **Bulk Invoice Upload**: Process multiple invoices simultaneously
-- **Asynchronous Processing**: Background task execution with Celery and Redis
-- **Invoice Health Score**: Comprehensive risk assessment system
-- **GST Verification Cache**: Automatic caching of verified GST numbers
-- **Enhanced Analytics Dashboard**: Charts and insights for business intelligence
-- **User Profile Management**: Customizable user profiles and preferences
-- **Data Export**: Export invoices and GST cache to CSV
+Phase 2 transforms Smart iInvoice into an intelligent business analytics platform with advanced automation and insights.
+
+### Key Features
+
+#### 1. Bulk Invoice Upload
+- Upload and process multiple invoices simultaneously
+- Real-time progress tracking with visual indicators
+- Asynchronous background processing for better performance
+- Batch status monitoring and completion notifications
+
+#### 2. Invoice Health Score System
+- Comprehensive risk assessment (0-10 scale)
+- Weighted scoring across 5 categories:
+  - Data Completeness (25%)
+  - Vendor & Buyer Verification (30%)
+  - Compliance & Legal Checks (25%)
+  - Fraud & Anomaly Detection (15%)
+  - AI Confidence & Document Quality (5%)
+- Color-coded status indicators (Healthy/Review/At Risk)
+- Detailed breakdown with specific issue flags
+
+#### 3. GST Verification Cache
+- Automatic caching of verified GST numbers
+- Instant verification for known vendors (no CAPTCHA required)
+- Searchable and filterable cache management page
+- Manual refresh capability for individual entries
+- Export cache data to CSV
+
+#### 4. Enhanced Analytics Dashboard
+- **Invoice Per Day Chart**: Daily processing trends with health status breakdown
+- **Money Flow Donut Chart**: Spending distribution by HSN/SAC categories
+- **Company Leaderboard**: Top vendors by total spend and invoice volume
+- **Red Flag List**: High-risk invoices requiring immediate attention
+- Real-time data updates
+
+#### 5. AI Confidence Score
+- Transparency into AI extraction confidence (0-100%)
+- Visual indicators for confidence levels (High/Medium/Low)
+- Filtering and sorting by confidence score
+- Automatic flagging of low-confidence extractions
+
+#### 6. Manual Data Entry Fallback
+- Graceful handling of AI extraction failures
+- User-friendly manual entry form with validation
+- Clear explanation of failure reasons
+- Same compliance checks as AI-extracted invoices
+
+#### 7. Smart Duplicate Management
+- Automatic linking of duplicate invoices to originals
+- Prevention of redundant GST verification
+- Duplicate relationship visualization
+- Audit trail for all duplicate submissions
+
+#### 8. User Profile Management
+- Customizable user profiles with profile pictures
+- Personal information management
+- Preference settings (notifications, sound, animations)
+- Social service connections (Facebook, Google)
+
+#### 9. Comprehensive Settings
+- Centralized settings management
+- Account preferences and customization
+- Connected services management
+- Data export and account deletion options
+
+#### 10. Data Export Capabilities
+- Export invoices to CSV with applied filters
+- Export GST cache entries
+- Export all user data (GDPR compliance)
+- Timestamped filenames for easy organization
+
+#### 11. Multiple API Key Management
+- Support for multiple Gemini API keys
+- Automatic failover when quota limits are reached
+- Seamless processing without user intervention
+- Usage tracking and monitoring
+
+### Environment Variables for Phase 2
+
+Add these to your `.env` file:
+
+```bash
+# Multiple API Keys (comma-separated)
+GEMINI_API_KEYS=key1,key2,key3
+
+# Celery Configuration
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+# Production Settings (optional)
+DEBUG=False
+ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+```
+
+### Production Deployment
+
+#### Celery Worker Configuration
+
+For production environments, use the production configuration:
+
+```bash
+# Linux/Unix/macOS
+./start_celery_worker.sh
+# Select 'y' when prompted for production mode
+
+# Windows
+start_celery_worker.bat
+# Select 'y' when prompted for production mode
+```
+
+Production configuration includes:
+- 4 concurrent workers
+- 30-minute task time limit
+- Automatic retries (max 3 attempts)
+- Memory management (restart after 1000 tasks)
+- Task monitoring and logging
+
+#### Systemd Service (Linux)
+
+Create `/etc/systemd/system/celery-smartinvoice.service`:
+
+```ini
+[Unit]
+Description=Celery Worker for Smart iInvoice
+After=network.target redis.service
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/smartinvoice
+ExecStart=/path/to/venv/bin/celery -A smartinvoice worker --config=celery_config_production --loglevel=info --concurrency=4 --detach
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl enable celery-smartinvoice
+sudo systemctl start celery-smartinvoice
+sudo systemctl status celery-smartinvoice
+```
+
+### Database Optimization
+
+Run the database optimization command to verify indexes and analyze tables:
+
+```bash
+python manage.py optimize_db
+```
+
+This command will:
+- Check all database indexes
+- Run ANALYZE on tables for query optimization
+- Display query statistics
+- Show GST cache coverage
+
+### Monitoring and Logging
+
+Celery tasks are logged with detailed information:
+- Task start and completion events
+- Failure notifications with stack traces
+- Performance metrics
+- Worker status
+
+Check logs in:
+- `logs/smartinvoice.log`: Application logs
+- `logs/errors.log`: Error logs
+- Celery worker console output
+
+### Troubleshooting
+
+#### Celery Worker Not Starting
+1. Ensure Redis is running: `redis-cli ping` (should return "PONG")
+2. Check Celery configuration in `smartinvoice/settings.py`
+3. Verify `CELERY_BROKER_URL` in `.env` file
+4. Run test: `python manage.py test_celery`
+
+#### Bulk Upload Not Working
+1. Verify Celery worker is running
+2. Check Redis connection
+3. Review Celery worker logs for errors
+4. Ensure sufficient disk space for uploaded files
+
+#### Health Score Not Calculating
+1. Check that all compliance checks are completing
+2. Verify `InvoiceHealthScore` model is migrated
+3. Review logs for scoring engine errors
+
+#### GST Cache Not Working
+1. Verify GST verification microservice is running
+2. Check cache entries in admin panel
+3. Ensure `GSTCacheEntry` model is migrated
 
 For detailed information about Phase 2 features, see:
 - Requirements: `.kiro/specs/smart-iinvoice-phase2-enhancements/requirements.md`

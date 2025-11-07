@@ -316,3 +316,94 @@ class LineItemForm(forms.Form):
         if rate is not None and (rate < 0 or rate > 100):
             raise ValidationError('GST rate must be between 0 and 100')
         return rate
+
+
+class UserProfileForm(forms.Form):
+    """Form for editing user profile"""
+    
+    first_name = forms.CharField(
+        max_length=30,
+        required=True,
+        label='First Name',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'placeholder': 'Enter your first name'
+        })
+    )
+    
+    last_name = forms.CharField(
+        max_length=30,
+        required=True,
+        label='Last Name',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'placeholder': 'Enter your last name'
+        })
+    )
+    
+    email = forms.EmailField(
+        required=True,
+        label='Email Address',
+        widget=forms.EmailInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'placeholder': 'your.email@example.com'
+        })
+    )
+    
+    username = forms.CharField(
+        max_length=150,
+        required=True,
+        label='Username',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'readonly': 'readonly',
+            'disabled': 'disabled'
+        })
+    )
+    
+    phone_number = forms.CharField(
+        max_length=15,
+        required=False,
+        label='Phone Number',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'placeholder': '+1234567890'
+        })
+    )
+    
+    company_name = forms.CharField(
+        max_length=255,
+        required=False,
+        label='Company Name',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm',
+            'placeholder': 'Your company name'
+        })
+    )
+    
+    profile_picture = forms.ImageField(
+        required=False,
+        label='Profile Picture',
+        widget=forms.FileInput(attrs={
+            'class': 'hidden',
+            'accept': 'image/jpeg,image/png,image/jpg',
+            'id': 'profile-picture-input'
+        }),
+        help_text='Upload a profile picture (JPG, PNG). Maximum size: 1MB.'
+    )
+    
+    def clean_email(self):
+        """Validate email format"""
+        email = self.cleaned_data.get('email', '').strip().lower()
+        return email
+    
+    def clean_phone_number(self):
+        """Validate phone number format"""
+        phone = self.cleaned_data.get('phone_number', '').strip()
+        if phone:
+            # Remove common separators
+            phone = phone.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
+            # Basic validation - should contain only digits and optional + prefix
+            if not phone.replace('+', '').isdigit():
+                raise ValidationError('Phone number should contain only digits and optional + prefix')
+        return phone

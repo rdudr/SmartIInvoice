@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+
+{% block title %}My Profile - Smart iInvoice{% endblock %}
+
+{% block page_title %}My Profile{% endblock %}
+{% block page_subtitle %}Manage your personal information and preferences{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Profile Card -->
+    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+        <!-- Header with gradient -->
+        <div class="bg-gradient-to-r from-primary to-secondary h-32"></div>
+        
+        <!-- Profile Content -->
+        <div class="px-6 pb-6">
+            <!-- Profile Picture Section -->
+            <div class="flex flex-col sm:flex-row items-center sm:items-end -mt-16 mb-6">
+                <div class="relative">
+                    {% if user.profile.profile_picture %}
+                        <img id="profile-picture-preview" 
+                             src="{{ user.profile.profile_picture.url }}" 
+                             alt="Profile Picture" 
+                             class="w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover">
+                    {% else %}
+                        <div id="profile-picture-preview" 
+                             class="w-32 h-32 rounded-full border-4 border-white shadow-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                            <span class="text-white text-4xl font-bold">{{ user.first_name.0|default:user.username.0|upper }}</span>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Upload button overlay -->
+                    <button type="button" 
+                            onclick="document.getElementById('profile-picture-input').click()"
+                            class="absolute bottom-0 right-0 bg-white rounded-full p-2 shadow-lg hover:bg-gray-50 transition-colors border border-gray-200">
+                        <i class="fas fa-camera text-primary"></i>
+                    </button>
+                </div>
+                
+                <div class="mt-4 sm:mt-0 sm:ml-6 text-center sm:text-left">
+                    <h2 class="text-2xl font-bold text-gray-900">{{ user.get_full_name|default:user.username }}</h2>
+                    <p class="text-gray-500">@{{ user.username }}</p>
+                    <p class="text-sm text-gray-400 mt-1">Member since {{ user.date_joined|date:"F Y" }}</p>
+                </div>
+            </div>
+            
+            <!-- Profile Form -->
+            <form method="post" enctype="multipart/form-data" id="profile-form" class="space-y-6">
+                {% csrf_token %}
+                
+                <!-- Personal Information Section -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                        <i class="fas fa-user mr-2 text-primary"></i>
+                        Personal Information
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- First Name -->
+                        <div>
+                            <label for="id_first_name" class="block text-sm font-medium text-gray-700">
+                                First Name <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.first_name }}
+                            {% if form.first_name.errors %}
+                                <p class="mt-1 text-sm text-red-600">{{ form.first_name.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Last Name -->
+                        <div>
+                            <label for="id_last_name" class="block text-sm font-medium text-gray-700">
+                                Last Name <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.last_name }}
+                            {% if form.last_name.errors %}
+                                <p class="mt-1 text-sm text-red-600">{{ form.last_name.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Username (readonly) -->
+                        <div>
+                            <label for="id_username" class="block text-sm font-medium text-gray-700">
+                                Username
+                            </label>
+                            {{ form.username }}
+                            <p class="mt-1 text-xs text-gray-500">Username cannot be changed</p>
+                        </div>
+                        
+                        <!-- Email -->
+                        <div>
+                            <label for="id_email" class="block text-sm font-medium text-gray-700">
+                                Email Address <span class="text-red-500">*</span>
+                            </label>
+                            {{ form.email }}
+                            {% if form.email.errors %}
+                                <p class="mt-1 text-sm text-red-600">{{ form.email.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Phone Number -->
+                        <div>
+                            <label for="id_phone_number" class="block text-sm font-medium text-gray-700">
+                                Phone Number
+                            </label>
+                            {{ form.phone_number }}
+                            {% if form.phone_number.errors %}
+                                <p class="mt-1 text-sm text-red-600">{{ form.phone_number.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Company Name -->
+                        <div>
+                            <label for="id_company_name" class="block text-sm font-medium text-gray-700">
+                                Company Name
+                            </label>
+                            {{ form.company_name }}
+                            {% if form.company_name.errors %}
+                                <p class="mt-1 text-sm text-red-600">{{ form.company_name.errors.0 }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Profile Picture Upload (hidden) -->
+                {{ form.profile_picture }}
+                
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
+                    <button type="submit" 
+                            class="flex-1 sm:flex-none px-6 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition-colors shadow-sm font-medium">
+                        <i class="fas fa-save mr-2"></i>
+                        Save Changes
+                    </button>
+                    
+                    <a href="{% url 'dashboard' %}" 
+                       class="flex-1 sm:flex-none px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-center font-medium">
+                        <i class="fas fa-times mr-2"></i>
+                        Cancel
+                    </a>
+                    
+                    {% if user.profile.profile_picture %}
+                    <button type="button" 
+                            onclick="deleteProfilePicture()"
+                            class="flex-1 sm:flex-none px-6 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-medium">
+                        <i class="fas fa-trash mr-2"></i>
+                        Remove Picture
+                    </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Additional Info Card -->
+    <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <i class="fas fa-info-circle text-blue-500 text-xl"></i>
+            </div>
+            <div class="ml-3">
+                <h4 class="text-sm font-medium text-blue-900">Profile Tips</h4>
+                <ul class="mt-2 text-sm text-blue-700 space-y-1">
+                    <li>• Keep your profile information up to date for better communication</li>
+                    <li>• Profile pictures should be clear and professional</li>
+                    <li>• Maximum file size for profile pictures is 1MB</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript for profile picture preview and deletion -->
+<script>
+    // Profile picture preview
+    document.getElementById('profile-picture-input').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            // Validate file size (1MB)
+            if (file.size > 1024 * 1024) {
+                alert('File size exceeds 1MB limit. Please choose a smaller image.');
+                e.target.value = '';
+                return;
+            }
+            
+            // Validate file type
+            if (!file.type.match('image/(jpeg|jpg|png)')) {
+                alert('Please upload a JPG or PNG image.');
+                e.target.value = '';
+                return;
+            }
+            
+            // Preview image
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('profile-picture-preview');
+                preview.innerHTML = '';
+                preview.className = 'w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover';
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                img.className = 'w-full h-full rounded-full object-cover';
+                preview.appendChild(img);
+            };
+            reader.readAsDataURL(file);
+            
+            // Auto-submit form to upload picture
+            document.getElementById('profile-form').submit();
+        }
+    });
+    
+    // Delete profile picture
+    function deleteProfilePicture() {
+        if (confirm('Are you sure you want to remove your profile picture?')) {
+            fetch('{% url "delete_profile_picture" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Failed to delete profile picture: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while deleting the profile picture');
+            });
+        }
+    }
+</script>
+{% endblock %}

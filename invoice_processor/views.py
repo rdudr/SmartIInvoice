@@ -90,15 +90,17 @@ def dashboard(request):
     ).values('flag_type').annotate(count=Count('id')).order_by('-count')
     
     # Recent activity - 5 most recently processed invoices
+    # Optimized with select_related for health_score
     recent_invoices = Invoice.objects.filter(
         uploaded_by=request.user
-    ).order_by('-uploaded_at')[:5]
+    ).select_related('health_score').order_by('-uploaded_at')[:5]
     
     # Suspected invoices - top 5 invoices with Critical compliance flags
+    # Optimized with select_related and prefetch_related
     suspected_invoices = Invoice.objects.filter(
         uploaded_by=request.user,
         compliance_flags__severity='CRITICAL'
-    ).annotate(
+    ).select_related('health_score').prefetch_related('compliance_flags').annotate(
         critical_flags_count=Count('compliance_flags', filter=Q(compliance_flags__severity='CRITICAL'))
     ).order_by('-critical_flags_count', '-uploaded_at')[:5]
     
@@ -1486,3 +1488,453 @@ def dashboard_analytics_api(request):
             'success': False,
             'error': 'Failed to fetch analytics data'
         }, status=500)
+
+
+@login_required
+def user_profile(request):
+    """
+    User profile page for viewing and editing profile information
+    Requirements: 9.1, 9.2, 9.3, 9.4
+    """
+    from .forms import UserProfileForm
+    from .services.user_profile_service import user_profile_service
+    
+    # Get or create user profile
+    profile = user_profile_service.get_or_create_profile(request.user)
+    
+    if request.method == 'POST':
+        form = UserProfileForm(request.POST, request.FILES)
+        
+        if form.is_valid():
+            # Update user basic info
+            success, error = user_profile_service.update_user_info(
+                request.user,
+                first_name=form.cleaned_data.get('first_name'),
+                last_name=form.cleaned_data.get('last_name'),
+                email=form.cleaned_data.get('email')
+            )
+            
+            if not success:
+                messages.error(request, error)
+                return render(request, 'profile.html', {'form': form})
+            
+            # Update profile fields
+            success, error = user_profile_service.update_profile(
+                request.user,
+                phone_number=form.cleaned_data.get('phone_number'),
+                company_name=form.cleaned_data.get('company_name')
+            )
+            
+            if not success:
+                messages.error(request, error)
+                return render(request, 'profile.html', {'form': form})
+            
+            # Handle profile picture upload if provided
+            if 'profile_picture' in request.FILES:
+                profile_picture = request.FILES['profile_picture']
+                success, error = user_profile_service.upload_profile_picture(
+                    request.user,
+                    profile_picture
+                )
+                
+                if not success:
+                    messages.error(request, error)
+                    return render(request, 'profile.html', {'form': form})
+            
+            messages.success(request, 'Profile updated successfully!')
+            return redirect('user_profile')
+        else:
+            # Form has validation errors
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        # GET request - populate form with current data
+        initial_data = {
+            'first_name': request.user.first_name,
+            'last_name': request.user.last_name,
+            'email': request.user.email,
+            'username': request.user.username,
+            'phone_number': profile.phone_number,
+            'company_name': profile.company_name,
+        }
+        form = UserProfileForm(initial=initial_data)
+    
+    context = {
+        'form': form,
+    }
+    
+    return render(request, 'profile.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_profile_picture(request):
+    """
+    AJAX endpoint to delete user's profile picture
+    Requirements: 9.4
+    """
+    from .services.user_profile_service import user_profile_service
+    
+    try:
+        success, error = user_profile_service.delete_profile_picture(request.user)
+        
+        if success:
+            return JsonResponse({
+                'success': True,
+                'message': 'Profile picture deleted successfully'
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': error or 'Failed to delete profile picture'
+            }, status=400)
+            
+    except Exception as e:
+        logger.error(f"Unexpected error deleting profile picture: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'An unexpected error occurred'
+        }, status=500)
+
+
+@login_required
+def settings(request):
+    """
+    Comprehensive settings page for managing account, preferences, and connected services
+    Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6
+    """
+    from .services.user_profile_service import user_profile_service
+    
+    # Get or create user profile
+    profile = user_profile_service.get_or_create_profile(request.user)
+    
+    if request.method == 'POST':
+        try:
+            # Update user basic info
+            first_name = request.POST.get('first_name', '').strip()
+            last_name = request.POST.get('last_name', '').strip()
+            username = request.POST.get('username', '').strip()
+            email = request.POST.get('email', '').strip()
+            
+            # Validate username uniqueness (if changed)
+            if username != request.user.username:
+                from django.contrib.auth.models import User
+                if User.objects.filter(username=username).exclude(id=request.user.id).exists():
+                    messages.error(request, 'Username already taken. Please choose a different username.')
+                    return redirect('settings')
+            
+            # Validate email uniqueness (if changed)
+            if email != request.user.email:
+                from django.contrib.auth.models import User
+                if User.objects.filter(email=email).exclude(id=request.user.id).exists():
+                    messages.error(request, 'Email already in use. Please use a different email.')
+                    return redirect('settings')
+            
+            # Update user info
+            request.user.first_name = first_name
+            request.user.last_name = last_name
+            request.user.username = username
+            request.user.email = email
+            request.user.save()
+            
+            # Handle profile picture upload if provided
+            if 'profile_picture' in request.FILES:
+                profile_picture = request.FILES['profile_picture']
+                
+                # Validate file size (1MB max)
+                if profile_picture.size > 1048576:  # 1MB in bytes
+                    messages.error(request, 'Profile picture must be less than 1 MB.')
+                    return redirect('settings')
+                
+                success, error = user_profile_service.upload_profile_picture(
+                    request.user,
+                    profile_picture
+                )
+                
+                if not success:
+                    messages.error(request, error)
+                    return redirect('settings')
+            
+            # Update connected services (placeholder for future OAuth integration)
+            profile.facebook_connected = 'facebook_connected' in request.POST
+            profile.google_connected = 'google_connected' in request.POST
+            
+            # Update preferences
+            profile.enable_sound_effects = 'enable_sound_effects' in request.POST
+            profile.enable_animations = 'enable_animations' in request.POST
+            profile.enable_notifications = 'enable_notifications' in request.POST
+            
+            profile.save()
+            
+            messages.success(request, 'Settings updated successfully!')
+            return redirect('settings')
+            
+        except Exception as e:
+            logger.error(f"Error updating settings: {str(e)}")
+            messages.error(request, 'An error occurred while updating settings. Please try again.')
+            return redirect('settings')
+    
+    # GET request - render settings page
+    return render(request, 'settings.html')
+
+
+@login_required
+@require_http_methods(["GET"])
+def export_invoices(request):
+    """
+    Export invoices to CSV with applied filters
+    Requirements: 11.1, 11.3, 11.4, 11.5
+    """
+    from .services.data_export_service import data_export_service
+    
+    try:
+        # Get filter parameters (same as gst_verification view)
+        status_filter = request.GET.get('status', 'all')
+        health_filter = request.GET.get('health', 'all')
+        confidence_filter = request.GET.get('confidence', 'all')
+        sort_by = request.GET.get('sort', 'date')
+        
+        # Base queryset for user's invoices
+        invoices_qs = Invoice.objects.filter(uploaded_by=request.user).select_related('health_score')
+        
+        # Apply GST verification status filter
+        if status_filter == 'pending':
+            invoices_qs = invoices_qs.filter(gst_verification_status='PENDING')
+        elif status_filter == 'verified':
+            invoices_qs = invoices_qs.filter(gst_verification_status='VERIFIED')
+        elif status_filter == 'failed':
+            invoices_qs = invoices_qs.filter(gst_verification_status='FAILED')
+        
+        # Apply health score filter
+        if health_filter == 'healthy':
+            invoices_qs = invoices_qs.filter(health_score__status='HEALTHY')
+        elif health_filter == 'review':
+            invoices_qs = invoices_qs.filter(health_score__status='REVIEW')
+        elif health_filter == 'at_risk':
+            invoices_qs = invoices_qs.filter(health_score__status='AT_RISK')
+        
+        # Apply confidence score filter
+        if confidence_filter == 'high':
+            invoices_qs = invoices_qs.filter(ai_confidence_score__gte=80)
+        elif confidence_filter == 'medium':
+            invoices_qs = invoices_qs.filter(ai_confidence_score__gte=50, ai_confidence_score__lt=80)
+        elif confidence_filter == 'low':
+            invoices_qs = invoices_qs.filter(ai_confidence_score__lt=50)
+        
+        # Apply sorting
+        if sort_by == 'health_asc':
+            invoices_qs = invoices_qs.order_by('health_score__overall_score', '-uploaded_at')
+        elif sort_by == 'health_desc':
+            invoices_qs = invoices_qs.order_by('-health_score__overall_score', '-uploaded_at')
+        elif sort_by == 'confidence_asc':
+            invoices_qs = invoices_qs.order_by('ai_confidence_score', '-uploaded_at')
+        elif sort_by == 'confidence_desc':
+            invoices_qs = invoices_qs.order_by('-ai_confidence_score', '-uploaded_at')
+        else:  # default: sort by date
+            invoices_qs = invoices_qs.order_by('-uploaded_at')
+        
+        logger.info(f"Exporting {invoices_qs.count()} invoices for user {request.user.username}")
+        
+        # Export to CSV
+        return data_export_service.export_invoices_to_csv(invoices_qs)
+        
+    except Exception as e:
+        logger.error(f"Error exporting invoices: {str(e)}", exc_info=True)
+        messages.error(request, 'Failed to export invoices. Please try again.')
+        return redirect('gst_verification')
+
+
+@login_required
+@require_http_methods(["GET"])
+def export_gst_cache(request):
+    """
+    Export GST cache entries to CSV
+    Requirements: 11.2, 11.3, 11.4, 11.5
+    """
+    from .services.data_export_service import data_export_service
+    
+    try:
+        logger.info(f"Exporting GST cache for user {request.user.username}")
+        
+        # Export to CSV
+        return data_export_service.export_gst_cache_to_csv()
+        
+    except Exception as e:
+        logger.error(f"Error exporting GST cache: {str(e)}", exc_info=True)
+        messages.error(request, 'Failed to export GST cache. Please try again.')
+        return redirect('gst_cache')
+
+
+@login_required
+@require_http_methods(["GET"])
+def export_my_data(request):
+    """
+    Export all user data (invoices, profile, preferences) to CSV
+    Requirements: 10.5
+    """
+    from .services.data_export_service import data_export_service
+    
+    try:
+        logger.info(f"Exporting all data for user {request.user.username}")
+        
+        # Export to CSV
+        return data_export_service.export_user_data(request.user)
+        
+    except Exception as e:
+        logger.error(f"Error exporting user data: {str(e)}", exc_info=True)
+        messages.error(request, 'Failed to export your data. Please try again.')
+        return redirect('settings')
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_account(request):
+    """
+    Handle account deletion with confirmation
+    Requirements: 10.6
+    
+    Implements soft delete by deactivating the account and clearing sensitive data.
+    User data is retained for audit purposes but the account becomes inaccessible.
+    """
+    from django.contrib.auth import logout
+    
+    try:
+        # Get confirmation parameter
+        confirmation = request.POST.get('confirmation', '').strip().lower()
+        
+        # Validate confirmation text
+        if confirmation != 'delete my account':
+            messages.error(request, 'Please type "delete my account" to confirm account deletion.')
+            return redirect('settings')
+        
+        user = request.user
+        username = user.username
+        
+        logger.info(f"Processing account deletion request for user: {username}")
+        
+        # Perform account deletion in a transaction
+        with transaction.atomic():
+            # Soft delete: Deactivate the account
+            user.is_active = False
+            
+            # Clear sensitive personal information
+            user.email = f"deleted_{user.id}@deleted.local"
+            user.first_name = ""
+            user.last_name = ""
+            
+            # Generate a random unusable username to prevent reuse
+            import uuid
+            user.username = f"deleted_{uuid.uuid4().hex[:20]}"
+            
+            # Set an unusable password
+            user.set_unusable_password()
+            
+            user.save()
+            
+            # Clear profile data if exists
+            if hasattr(user, 'profile'):
+                profile = user.profile
+                
+                # Delete profile picture file if exists
+                if profile.profile_picture:
+                    try:
+                        profile.profile_picture.delete(save=False)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete profile picture file: {str(e)}")
+                
+                # Clear profile fields
+                profile.profile_picture = None
+                profile.phone_number = None
+                profile.company_name = None
+                profile.facebook_connected = False
+                profile.google_connected = False
+                profile.save()
+            
+            # Note: Invoice data is retained for audit and compliance purposes
+            # but is no longer accessible since the user account is deactivated
+            
+            logger.info(f"Account successfully deleted for user: {username} (ID: {user.id})")
+        
+        # Log out the user
+        logout(request)
+        
+        # Redirect to a confirmation page or login with a message
+        messages.success(request, 'Your account has been successfully deleted. We\'re sorry to see you go.')
+        return redirect('login')
+        
+    except Exception as e:
+        logger.error(f"Error deleting account for user {request.user.username}: {str(e)}", exc_info=True)
+        messages.error(request, 'An error occurred while deleting your account. Please try again or contact support.')
+        return redirect('settings')
+
+
+@login_required
+def coming_soon(request):
+    """
+    Coming Soon page for features under development
+    Requirements: 13.1, 13.2, 13.3, 13.5
+    """
+    from .models import FeatureNotificationSignup
+    
+    # Get feature name from query parameter (optional)
+    feature_name = request.GET.get('feature', 'This feature')
+    
+    # Define feature descriptions
+    feature_descriptions = {
+        'reports': 'Advanced reporting and analytics with custom date ranges, filters, and export options. Generate comprehensive reports on invoice trends, vendor analysis, and compliance metrics.',
+        'default': 'We\'re working hard to bring you this exciting new feature. Stay tuned for updates!'
+    }
+    
+    # Get description based on feature name
+    feature_key = feature_name.lower() if feature_name.lower() in feature_descriptions else 'default'
+    description = feature_descriptions.get(feature_key, feature_descriptions['default'])
+    
+    # Handle email signup for notifications
+    signup_success = False
+    signup_error = None
+    
+    if request.method == 'POST':
+        email = request.POST.get('notification_email', '').strip()
+        
+        if email:
+            try:
+                # Validate email format
+                from django.core.validators import validate_email
+                from django.core.exceptions import ValidationError
+                
+                try:
+                    validate_email(email)
+                except ValidationError:
+                    signup_error = 'Please enter a valid email address.'
+                else:
+                    # Check if already signed up
+                    existing_signup = FeatureNotificationSignup.objects.filter(
+                        email=email,
+                        feature_name=feature_name
+                    ).first()
+                    
+                    if existing_signup:
+                        signup_error = 'You\'re already signed up for notifications about this feature!'
+                    else:
+                        # Create signup record
+                        FeatureNotificationSignup.objects.create(
+                            email=email,
+                            feature_name=feature_name,
+                            user=request.user
+                        )
+                        signup_success = True
+                        logger.info(f"User {request.user.username} signed up for {feature_name} notifications")
+                        
+            except Exception as e:
+                logger.error(f"Error processing feature notification signup: {str(e)}")
+                signup_error = 'An error occurred. Please try again.'
+        else:
+            signup_error = 'Please enter your email address.'
+    
+    context = {
+        'feature_name': feature_name,
+        'description': description,
+        'signup_success': signup_success,
+        'signup_error': signup_error,
+    }
+    
+    return render(request, 'coming_soon.html', context)
