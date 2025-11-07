@@ -110,8 +110,8 @@ def run_all_checks(invoice_data: Dict, invoice_obj: Invoice) -> List[ComplianceF
     compliance_flags = []
     
     try:
-        # 1. Check for duplicates
-        duplicate_flag = check_duplicates(invoice_data)
+        # 1. Check for duplicates and create links
+        duplicate_flag = check_duplicates(invoice_data, invoice_obj)
         if duplicate_flag:
             duplicate_flag.invoice = invoice_obj
             compliance_flags.append(duplicate_flag)
@@ -152,17 +152,21 @@ def run_all_checks(invoice_data: Dict, invoice_obj: Invoice) -> List[ComplianceF
     return compliance_flags
 
 
-def check_duplicates(invoice_data: Dict) -> Optional[ComplianceFlag]:
+def check_duplicates(invoice_data: Dict, invoice_obj: Invoice = None) -> Optional[ComplianceFlag]:
     """
     Check for duplicate invoices by invoice_id and vendor_gstin.
+    If a duplicate is found and invoice_obj is provided, create a duplicate link.
     
     Args:
         invoice_data: Extracted invoice data
+        invoice_obj: Invoice object to link if duplicate (optional)
         
     Returns:
         ComplianceFlag or None: Duplicate flag if found, None otherwise
     """
     try:
+        from .duplicate_linking_service import duplicate_linking_service
+        
         invoice_id = invoice_data.get('invoice_id')
         vendor_gstin = invoice_data.get('vendor_gstin')
         
@@ -170,22 +174,35 @@ def check_duplicates(invoice_data: Dict) -> Optional[ComplianceFlag]:
             logger.warning("Missing invoice_id or vendor_gstin for duplicate check")
             return None
         
-        # Query for existing invoices with same invoice_id and vendor_gstin
-        existing_invoices = Invoice.objects.filter(
-            invoice_id=invoice_id,
-            vendor_gstin=vendor_gstin
-        ).exclude(
-            status='PENDING_ANALYSIS'  # Exclude the current invoice being processed
+        # Find the original invoice (first occurrence)
+        original_invoice = duplicate_linking_service.find_original_invoice(
+            vendor_gstin=vendor_gstin,
+            invoice_id=invoice_id
         )
         
-        if existing_invoices.exists():
-            existing_invoice = existing_invoices.first()
+        if original_invoice:
+            # If invoice_obj is provided, create the duplicate link
+            if invoice_obj:
+                link_success = duplicate_linking_service.link_duplicate(
+                    duplicate=invoice_obj,
+                    original=original_invoice
+                )
+                
+                if link_success:
+                    logger.info(f"Successfully linked duplicate invoice {invoice_obj.id} "
+                               f"to original {original_invoice.id}")
+                else:
+                    logger.warning(f"Failed to link duplicate invoice {invoice_obj.id} "
+                                  f"to original {original_invoice.id}")
+            
+            # Create compliance flag for duplicate
             return ComplianceFlag(
                 flag_type='DUPLICATE',
                 severity='CRITICAL',
                 description=f"Duplicate invoice detected. Same invoice ID '{invoice_id}' "
                            f"from vendor GSTIN '{vendor_gstin}' already exists "
-                           f"(uploaded on {existing_invoice.uploaded_at.strftime('%Y-%m-%d %H:%M')})"
+                           f"(uploaded on {original_invoice.uploaded_at.strftime('%Y-%m-%d %H:%M')}). "
+                           f"Linked to original invoice #{original_invoice.id}."
             )
         
         return None

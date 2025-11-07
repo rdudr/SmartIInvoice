@@ -51,7 +51,32 @@ npm run build-css
 npm run build-css-prod
 ```
 
-### 5. Run the Development Server
+### 5. Set Up Asynchronous Processing (Optional - Required for Phase 2 Features)
+
+For bulk upload and background processing features, you need to set up Celery and Redis:
+
+```bash
+# Install Redis (required for Celery message broker)
+# Windows: Download from https://github.com/microsoftarchive/redis/releases
+# Ubuntu/Debian: sudo apt-get install redis-server
+# macOS: brew install redis
+
+# Start Redis server
+redis-server
+# Or on Windows: start_redis.bat
+
+# In a separate terminal, start Celery worker
+celery -A smartinvoice worker --loglevel=info --pool=solo --concurrency=2
+# Or on Windows: start_celery_worker.bat
+# Or on Unix/Linux/macOS: ./start_celery_worker.sh
+
+# Test Celery setup
+python manage.py test_celery
+```
+
+See [CELERY_SETUP.md](CELERY_SETUP.md) for detailed setup instructions and troubleshooting.
+
+### 6. Run the Development Server
 
 ```bash
 python manage.py runserver
@@ -87,6 +112,20 @@ This is the basic project structure. The following features will be implemented 
 6. Dashboard and UI components
 
 ## Management Commands
+
+### Test Celery Setup
+
+Test if Celery and Redis are configured correctly:
+
+```bash
+python manage.py test_celery
+```
+
+This command will:
+- Queue a test task to Celery
+- Wait for the result (10 second timeout)
+- Display success or error messages
+- Provide troubleshooting tips if the test fails
 
 ### Load HSN/SAC Data
 
@@ -130,3 +169,22 @@ For development, make sure to:
 1. Keep the Django server running: `python manage.py runserver`
 2. Keep Tailwind CSS building: `npm run build-css` (if customizing styles)
 3. Load HSN data after any changes to GST rate files: `python manage.py load_hsn_data --force`
+4. For Phase 2 features (bulk upload, background processing):
+   - Keep Redis running: `redis-server`
+   - Keep Celery worker running: `celery -A smartinvoice worker --loglevel=info --pool=solo`
+
+## Phase 2 Features
+
+Phase 2 introduces advanced features including:
+- **Bulk Invoice Upload**: Process multiple invoices simultaneously
+- **Asynchronous Processing**: Background task execution with Celery and Redis
+- **Invoice Health Score**: Comprehensive risk assessment system
+- **GST Verification Cache**: Automatic caching of verified GST numbers
+- **Enhanced Analytics Dashboard**: Charts and insights for business intelligence
+- **User Profile Management**: Customizable user profiles and preferences
+- **Data Export**: Export invoices and GST cache to CSV
+
+For detailed information about Phase 2 features, see:
+- Requirements: `.kiro/specs/smart-iinvoice-phase2-enhancements/requirements.md`
+- Design: `.kiro/specs/smart-iinvoice-phase2-enhancements/design.md`
+- Implementation Tasks: `.kiro/specs/smart-iinvoice-phase2-enhancements/tasks.md`

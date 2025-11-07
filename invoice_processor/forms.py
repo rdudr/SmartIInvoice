@@ -126,3 +126,193 @@ class InvoiceUploadForm(forms.Form):
             logger.warning(f"Could not validate file content for {file.name}: {str(e)}")
         
         return file
+
+
+class ManualInvoiceEntryForm(forms.Form):
+    """Form for manual invoice data entry when AI extraction fails"""
+    
+    # Invoice-level fields
+    invoice_id = forms.CharField(
+        max_length=100,
+        required=True,
+        label='Invoice Number',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': 'e.g., INV-2024-001'
+        })
+    )
+    
+    invoice_date = forms.DateField(
+        required=True,
+        label='Invoice Date',
+        widget=forms.DateInput(attrs={
+            'type': 'date',
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm'
+        })
+    )
+    
+    vendor_name = forms.CharField(
+        max_length=255,
+        required=True,
+        label='Vendor Name',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': 'e.g., ABC Suppliers Pvt Ltd'
+        })
+    )
+    
+    vendor_gstin = forms.CharField(
+        max_length=15,
+        required=False,
+        label='Vendor GSTIN',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '22AAAAA0000A1Z5',
+            'pattern': '[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}',
+            'title': '15-character GSTIN (e.g., 22AAAAA0000A1Z5)'
+        })
+    )
+    
+    billed_company_gstin = forms.CharField(
+        max_length=15,
+        required=False,
+        label='Billed Company GSTIN',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '22AAAAA0000A1Z5',
+            'pattern': '[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}',
+            'title': '15-character GSTIN (e.g., 22AAAAA0000A1Z5)'
+        })
+    )
+    
+    grand_total = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=True,
+        label='Grand Total (₹)',
+        widget=forms.NumberInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '0.00',
+            'step': '0.01',
+            'min': '0'
+        })
+    )
+    
+    def clean_vendor_gstin(self):
+        """Validate vendor GSTIN format"""
+        gstin = self.cleaned_data.get('vendor_gstin', '').strip().upper()
+        if gstin:
+            import re
+            pattern = r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$'
+            if not re.match(pattern, gstin):
+                raise ValidationError('Invalid GSTIN format. Must be 15 characters (e.g., 22AAAAA0000A1Z5)')
+        return gstin
+    
+    def clean_billed_company_gstin(self):
+        """Validate billed company GSTIN format"""
+        gstin = self.cleaned_data.get('billed_company_gstin', '').strip().upper()
+        if gstin:
+            import re
+            pattern = r'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$'
+            if not re.match(pattern, gstin):
+                raise ValidationError('Invalid GSTIN format. Must be 15 characters (e.g., 22AAAAA0000A1Z5)')
+        return gstin
+    
+    def clean_invoice_date(self):
+        """Validate invoice date is not in the future"""
+        from datetime import date
+        invoice_date = self.cleaned_data.get('invoice_date')
+        if invoice_date and invoice_date > date.today():
+            raise ValidationError('Invoice date cannot be in the future')
+        return invoice_date
+
+
+class LineItemForm(forms.Form):
+    """Form for individual line items in manual entry"""
+    
+    description = forms.CharField(
+        max_length=500,
+        required=True,
+        label='Description',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': 'Item description'
+        })
+    )
+    
+    hsn_sac_code = forms.CharField(
+        max_length=20,
+        required=False,
+        label='HSN/SAC Code',
+        widget=forms.TextInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': 'e.g., 8517'
+        })
+    )
+    
+    quantity = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=True,
+        label='Quantity',
+        widget=forms.NumberInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '1.00',
+            'step': '0.01',
+            'min': '0.01'
+        })
+    )
+    
+    unit_price = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=True,
+        label='Unit Price (₹)',
+        widget=forms.NumberInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '0.00',
+            'step': '0.01',
+            'min': '0'
+        })
+    )
+    
+    billed_gst_rate = forms.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        required=True,
+        label='GST Rate (%)',
+        widget=forms.NumberInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '18.00',
+            'step': '0.01',
+            'min': '0',
+            'max': '100'
+        })
+    )
+    
+    line_total = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=True,
+        label='Line Total (₹)',
+        widget=forms.NumberInput(attrs={
+            'class': 'mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm',
+            'placeholder': '0.00',
+            'step': '0.01',
+            'min': '0'
+        })
+    )
+    
+    def clean_quantity(self):
+        """Validate quantity is positive"""
+        quantity = self.cleaned_data.get('quantity')
+        if quantity and quantity <= 0:
+            raise ValidationError('Quantity must be greater than zero')
+        return quantity
+    
+    def clean_billed_gst_rate(self):
+        """Validate GST rate is between 0 and 100"""
+        rate = self.cleaned_data.get('billed_gst_rate')
+        if rate is not None and (rate < 0 or rate > 100):
+            raise ValidationError('GST rate must be between 0 and 100')
+        return rate

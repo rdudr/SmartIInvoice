@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Manual Invoice Entry - Smart iInvoice{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Manual Invoice Entry</h1>
+                <p class="mt-2 text-sm text-gray-600">AI extraction failed. Please enter invoice data manually.</p>
+            </div>
+            <a href="{% url 'gst_verification' %}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="mr-2 h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                Back to Invoices
+            </a>
+        </div>
+    </div>
+
+    <!-- Failure Reason Alert -->
+    <div class="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-800">AI Extraction Failed</h3>
+                <p class="mt-1 text-sm text-yellow-700">{{ failure_reason }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoice Preview (if file exists) -->
+    {% if invoice.file_path %}
+    <div class="mb-6 bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Invoice Preview</h2>
+        <div class="border border-gray-300 rounded-lg overflow-hidden">
+            {% if invoice.file_path.url|slice:"-4:" == ".pdf" %}
+                <embed src="{{ invoice.file_path.url }}" type="application/pdf" width="100%" height="600px" />
+            {% else %}
+                <img src="{{ invoice.file_path.url }}" alt="Invoice" class="w-full h-auto">
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Manual Entry Form -->
+    <form method="post" action="{% url 'submit_manual_entry' invoice.id %}" id="manual-entry-form" class="bg-white shadow rounded-lg p-6">
+        {% csrf_token %}
+        
+        <!-- Invoice Information Section -->
+        <div class="mb-8">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">Invoice Information</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Invoice Number -->
+                <div>
+                    <label for="id_invoice_id" class="block text-sm font-medium text-gray-700">
+                        Invoice Number <span class="text-red-500">*</span>
+                    </label>
+                    {{ form.invoice_id }}
+                    {% if form.invoice_id.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.invoice_id.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Invoice Date -->
+                <div>
+                    <label for="id_invoice_date" class="block text-sm font-medium text-gray-700">
+                        Invoice Date <span class="text-red-500">*</span>
+                    </label>
+                    {{ form.invoice_date }}
+                    {% if form.invoice_date.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.invoice_date.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Vendor Name -->
+                <div class="md:col-span-2">
+                    <label for="id_vendor_name" class="block text-sm font-medium text-gray-700">
+                        Vendor Name <span class="text-red-500">*</span>
+                    </label>
+                    {{ form.vendor_name }}
+                    {% if form.vendor_name.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.vendor_name.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Vendor GSTIN -->
+                <div>
+                    <label for="id_vendor_gstin" class="block text-sm font-medium text-gray-700">
+                        Vendor GSTIN
+                    </label>
+                    {{ form.vendor_gstin }}
+                    <p class="mt-1 text-xs text-gray-500">Format: 22AAAAA0000A1Z5 (15 characters)</p>
+                    {% if form.vendor_gstin.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.vendor_gstin.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Billed Company GSTIN -->
+                <div>
+                    <label for="id_billed_company_gstin" class="block text-sm font-medium text-gray-700">
+                        Billed Company GSTIN
+                    </label>
+                    {{ form.billed_company_gstin }}
+                    <p class="mt-1 text-xs text-gray-500">Format: 22AAAAA0000A1Z5 (15 characters)</p>
+                    {% if form.billed_company_gstin.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.billed_company_gstin.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Grand Total -->
+                <div>
+                    <label for="id_grand_total" class="block text-sm font-medium text-gray-700">
+                        Grand Total (₹) <span class="text-red-500">*</span>
+                    </label>
+                    {{ form.grand_total }}
+                    {% if form.grand_total.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.grand_total.errors.0 }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Line Items Section -->
+        <div class="mb-8">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">Line Items</h2>
+                <button type="button" id="add-line-item" class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <svg class="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Line Item
+                </button>
+            </div>
+
+            <div id="line-items-container">
+                <!-- Line items will be added here dynamically -->
+            </div>
+
+            <p class="mt-2 text-sm text-gray-500">At least one line item is required</p>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
+            <a href="{% url 'gst_verification' %}" class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Cancel
+            </a>
+            <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                Submit Invoice
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Line Item Template (hidden) -->
+<template id="line-item-template">
+    <div class="line-item-row bg-gray-50 p-4 rounded-lg mb-4 border border-gray-200">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-medium text-gray-700">Line Item <span class="line-item-number">1</span></h3>
+            <button type="button" class="remove-line-item text-red-600 hover:text-red-800 text-sm font-medium">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Description -->
+            <div class="lg:col-span-2">
+                <label class="block text-sm font-medium text-gray-700">
+                    Description <span class="text-red-500">*</span>
+                </label>
+                <input type="text" name="line_items[INDEX][description]" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Item description">
+            </div>
+
+            <!-- HSN/SAC Code -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700">HSN/SAC Code</label>
+                <input type="text" name="line_items[INDEX][hsn_sac_code]" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="e.g., 8517">
+            </div>
+
+            <!-- Quantity -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    Quantity <span class="text-red-500">*</span>
+                </label>
+                <input type="number" name="line_items[INDEX][quantity]" required step="0.01" min="0.01" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="1.00">
+            </div>
+
+            <!-- Unit Price -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    Unit Price (₹) <span class="text-red-500">*</span>
+                </label>
+                <input type="number" name="line_items[INDEX][unit_price]" required step="0.01" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="0.00">
+            </div>
+
+            <!-- GST Rate -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    GST Rate (%) <span class="text-red-500">*</span>
+                </label>
+                <input type="number" name="line_items[INDEX][billed_gst_rate]" required step="0.01" min="0" max="100" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="18.00">
+            </div>
+
+            <!-- Line Total -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    Line Total (₹) <span class="text-red-500">*</span>
+                </label>
+                <input type="number" name="line_items[INDEX][line_total]" required step="0.01" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="0.00">
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let lineItemIndex = 0;
+    const container = document.getElementById('line-items-container');
+    const template = document.getElementById('line-item-template');
+    const addButton = document.getElementById('add-line-item');
+
+    // Add first line item by default
+    addLineItem();
+
+    // Add line item button
+    addButton.addEventListener('click', addLineItem);
+
+    function addLineItem() {
+        lineItemIndex++;
+        const clone = template.content.cloneNode(true);
+        
+        // Update line item number
+        clone.querySelector('.line-item-number').textContent = lineItemIndex;
+        
+        // Update input names with actual index
+        clone.querySelectorAll('input').forEach(input => {
+            input.name = input.name.replace('INDEX', lineItemIndex);
+        });
+        
+        // Add remove button handler
+        const removeBtn = clone.querySelector('.remove-line-item');
+        removeBtn.addEventListener('click', function() {
+            if (container.children.length > 1) {
+                this.closest('.line-item-row').remove();
+                updateLineItemNumbers();
+            } else {
+                alert('At least one line item is required');
+            }
+        });
+        
+        container.appendChild(clone);
+    }
+
+    function updateLineItemNumbers() {
+        const lineItems = container.querySelectorAll('.line-item-row');
+        lineItems.forEach((item, index) => {
+            item.querySelector('.line-item-number').textContent = index + 1;
+        });
+    }
+
+    // Form validation
+    document.getElementById('manual-entry-form').addEventListener('submit', function(e) {
+        const lineItems = container.querySelectorAll('.line-item-row');
+        if (lineItems.length === 0) {
+            e.preventDefault();
+            alert('Please add at least one line item');
+            return false;
+        }
+    });
+});
+</script>
+{% endblock %}

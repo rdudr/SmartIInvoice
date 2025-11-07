@@ -22,11 +22,13 @@ class GeminiServiceTests(TestCase):
         """Test successful initialization of GeminiService"""
         mock_config.return_value = self.mock_api_key
         
-        service = GeminiService()
+        # Test with key manager disabled for backward compatibility
+        service = GeminiService(use_key_manager=False)
         
         self.assertEqual(service.api_key, self.mock_api_key)
         self.assertEqual(service.max_retries, 1)
         self.assertEqual(service.timeout_seconds, 30)
+        self.assertFalse(service.use_key_manager)
     
     @patch('invoice_processor.services.gemini_service.config')
     def test_gemini_service_initialization_no_api_key(self, mock_config):
@@ -34,7 +36,7 @@ class GeminiServiceTests(TestCase):
         mock_config.return_value = None
         
         with self.assertRaises(ValueError) as context:
-            GeminiService()
+            GeminiService(use_key_manager=False)
         
         self.assertIn("GEMINI_API_KEY environment variable is required", str(context.exception))
     
@@ -1009,3 +1011,1097 @@ class GSTClientTests(TestCase):
         result = is_gst_service_available()
         self.assertTrue(result)
         mock_client.is_service_available.assert_called_once()
+
+
+
+class InvoiceHealthScoreEngineTests(TestCase):
+    """Test cases for Invoice Health Score Engine"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        
+        # Create a base invoice for testing
+        self.invoice = Invoice.objects.create(
+            invoice_id='TEST-001',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor Ltd',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1180.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice.pdf',
+            gst_verification_status='VERIFIED',
+            ai_confidence_score=Decimal('85.00')
+        )
+        
+        # Add line items
+        LineItem.objects.create(
+            invoice=self.invoice,
+            description='Test Product A',
+            normalized_key='test product',
+            hsn_sac_code='1001',
+            quantity=Decimal('10'),
+            unit_price=Decimal('100.00'),
+            billed_gst_rate=Decimal('18.00'),
+            line_total=Decimal('1180.00')
+        )
+    
+    def test_score_data_completeness_perfect(self):
+        """Test data completeness scoring with all fields present"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_data_completeness(self.invoice)
+        
+        self.assertEqual(score, 100.0)
+    
+    def test_score_data_completeness_missing_fields(self):
+        """Test data completeness scoring with missing fields"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Create invoice with missing fields
+        incomplete_invoice = Invoice.objects.create(
+            invoice_id='',  # Missing
+            invoice_date=date(2023, 12, 1),
+            vendor_name='',  # Missing
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='',  # Missing
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/incomplete.pdf'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_data_completeness(incomplete_invoice)
+        
+        # Should lose points for missing fields
+        self.assertLess(score, 100.0)
+        self.assertGreaterEqual(score, 0.0)
+    
+    def test_score_data_completeness_no_line_items(self):
+        """Test data completeness scoring with no line items"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Create invoice without line items
+        no_items_invoice = Invoice.objects.create(
+            invoice_id='TEST-002',
+            invoice_date=date(2023, 12, 1),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/no_items.pdf'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_data_completeness(no_items_invoice)
+        
+        # Should lose 20 points for no line items
+        self.assertLess(score, 100.0)
+    
+    def test_score_verification_verified(self):
+        """Test verification scoring with verified GST"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_verification(self.invoice)
+        
+        self.assertEqual(score, 100.0)
+    
+    def test_score_verification_pending(self):
+        """Test verification scoring with pending GST verification"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        self.invoice.gst_verification_status = 'PENDING'
+        self.invoice.save()
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_verification(self.invoice)
+        
+        self.assertEqual(score, 50.0)
+    
+    def test_score_verification_failed(self):
+        """Test verification scoring with failed GST verification"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        self.invoice.gst_verification_status = 'FAILED'
+        self.invoice.save()
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_verification(self.invoice)
+        
+        self.assertEqual(score, 0.0)
+    
+    def test_score_compliance_no_flags(self):
+        """Test compliance scoring with no flags"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_compliance(self.invoice)
+        
+        self.assertEqual(score, 100.0)
+    
+    def test_score_compliance_with_critical_flags(self):
+        """Test compliance scoring with critical flags"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add critical arithmetic error
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='ARITHMETIC_ERROR',
+            severity='CRITICAL',
+            description='Arithmetic error detected'
+        )
+        
+        # Add critical HSN mismatch
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='HSN_MISMATCH',
+            severity='CRITICAL',
+            description='HSN rate mismatch'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_compliance(self.invoice)
+        
+        # Should lose 30 points per critical flag
+        self.assertEqual(score, 40.0)
+    
+    def test_score_compliance_with_warning_flags(self):
+        """Test compliance scoring with warning flags"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add warning flag
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='ARITHMETIC_ERROR',
+            severity='WARNING',
+            description='Minor arithmetic issue'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_compliance(self.invoice)
+        
+        # Should lose 15 points for warning
+        self.assertEqual(score, 85.0)
+    
+    def test_score_fraud_detection_no_issues(self):
+        """Test fraud detection scoring with no issues"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_fraud_detection(self.invoice)
+        
+        self.assertEqual(score, 100.0)
+    
+    def test_score_fraud_detection_duplicate_flag(self):
+        """Test fraud detection scoring with duplicate flag"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add duplicate flag
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='DUPLICATE',
+            severity='CRITICAL',
+            description='Duplicate invoice detected'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_fraud_detection(self.invoice)
+        
+        # Should lose 50 points for duplicate
+        self.assertEqual(score, 50.0)
+    
+    def test_score_fraud_detection_price_anomalies(self):
+        """Test fraud detection scoring with price anomalies"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add multiple price anomaly flags
+        for i in range(3):
+            ComplianceFlag.objects.create(
+                invoice=self.invoice,
+                flag_type='PRICE_ANOMALY',
+                severity='WARNING',
+                description=f'Price anomaly {i+1}'
+            )
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_fraud_detection(self.invoice)
+        
+        # Should lose 10 points per anomaly (3 * 10 = 30)
+        self.assertEqual(score, 70.0)
+    
+    def test_score_ai_confidence_with_score(self):
+        """Test AI confidence scoring with confidence score"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_ai_confidence(self.invoice)
+        
+        # Should return the AI confidence score
+        self.assertEqual(score, 85.0)
+    
+    def test_score_ai_confidence_manual_entry(self):
+        """Test AI confidence scoring for manual entry"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        self.invoice.extraction_method = 'MANUAL'
+        self.invoice.ai_confidence_score = None
+        self.invoice.save()
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_ai_confidence(self.invoice)
+        
+        # Should return neutral score for manual entry
+        self.assertEqual(score, 75.0)
+    
+    def test_score_ai_confidence_no_score(self):
+        """Test AI confidence scoring with no score available"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        self.invoice.ai_confidence_score = None
+        self.invoice.save()
+        
+        engine = InvoiceHealthScoreEngine()
+        score = engine._score_ai_confidence(self.invoice)
+        
+        # Should return default moderate score
+        self.assertEqual(score, 70.0)
+    
+    def test_calculate_health_score_healthy(self):
+        """Test overall health score calculation for healthy invoice"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        self.assertIn('score', result)
+        self.assertIn('status', result)
+        self.assertIn('breakdown', result)
+        self.assertIn('key_flags', result)
+        
+        # Perfect invoice should have high score
+        self.assertGreaterEqual(result['score'], 8.0)
+        self.assertEqual(result['status'], 'HEALTHY')
+        self.assertEqual(len(result['key_flags']), 0)
+    
+    def test_calculate_health_score_review(self):
+        """Test overall health score calculation for review status"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add some issues to bring score to review range
+        self.invoice.gst_verification_status = 'PENDING'
+        self.invoice.ai_confidence_score = Decimal('60.00')
+        self.invoice.save()
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='ARITHMETIC_ERROR',
+            severity='WARNING',
+            description='Minor arithmetic issue'
+        )
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='PRICE_ANOMALY',
+            severity='WARNING',
+            description='Price anomaly detected'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        # Should be in review range (5.0-7.9)
+        self.assertGreaterEqual(result['score'], 5.0)
+        self.assertLess(result['score'], 8.0)
+        self.assertEqual(result['status'], 'REVIEW')
+        self.assertGreater(len(result['key_flags']), 0)
+    
+    def test_calculate_health_score_at_risk(self):
+        """Test overall health score calculation for at-risk status"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add multiple critical issues
+        self.invoice.gst_verification_status = 'FAILED'
+        self.invoice.ai_confidence_score = Decimal('30.00')
+        self.invoice.save()
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='DUPLICATE',
+            severity='CRITICAL',
+            description='Duplicate invoice'
+        )
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='ARITHMETIC_ERROR',
+            severity='CRITICAL',
+            description='Arithmetic error'
+        )
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='HSN_MISMATCH',
+            severity='CRITICAL',
+            description='HSN rate mismatch'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        # Should be at risk (< 5.0)
+        self.assertLess(result['score'], 5.0)
+        self.assertEqual(result['status'], 'AT_RISK')
+        self.assertGreater(len(result['key_flags']), 0)
+    
+    def test_generate_key_flags_comprehensive(self):
+        """Test key flags generation with various issues"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        # Add various issues
+        self.invoice.gst_verification_status = 'FAILED'
+        self.invoice.ai_confidence_score = Decimal('45.00')
+        self.invoice.save()
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='DUPLICATE',
+            severity='CRITICAL',
+            description='Duplicate invoice detected'
+        )
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='ARITHMETIC_ERROR',
+            severity='CRITICAL',
+            description='Grand total mismatch'
+        )
+        
+        ComplianceFlag.objects.create(
+            invoice=self.invoice,
+            flag_type='PRICE_ANOMALY',
+            severity='WARNING',
+            description='Price anomaly detected'
+        )
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        key_flags = result['key_flags']
+        
+        # Should have multiple flags
+        self.assertGreater(len(key_flags), 0)
+        
+        # Check for specific flag types
+        flag_text = ' '.join(key_flags)
+        self.assertIn('GST verification failed', flag_text)
+        self.assertIn('Duplicate', flag_text)
+        self.assertIn('Low AI confidence', flag_text)
+    
+    def test_calculate_health_score_breakdown(self):
+        """Test that breakdown contains all category scores"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        breakdown = result['breakdown']
+        
+        # Check all categories are present
+        self.assertIn('data_completeness', breakdown)
+        self.assertIn('verification', breakdown)
+        self.assertIn('compliance', breakdown)
+        self.assertIn('fraud_detection', breakdown)
+        self.assertIn('ai_confidence', breakdown)
+        
+        # All scores should be 0-100
+        for category, score in breakdown.items():
+            self.assertGreaterEqual(score, 0.0)
+            self.assertLessEqual(score, 100.0)
+    
+    def test_calculate_health_score_weighted_correctly(self):
+        """Test that overall score is weighted correctly"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        result = engine.calculate_health_score(self.invoice)
+        
+        # Manually calculate expected score
+        breakdown = result['breakdown']
+        expected_score = (
+            (breakdown['data_completeness'] * 0.25) +
+            (breakdown['verification'] * 0.30) +
+            (breakdown['compliance'] * 0.25) +
+            (breakdown['fraud_detection'] * 0.15) +
+            (breakdown['ai_confidence'] * 0.05)
+        ) / 10.0
+        
+        # Should match calculated score (within rounding)
+        self.assertAlmostEqual(result['score'], expected_score, places=1)
+    
+    def test_calculate_health_score_status_thresholds(self):
+        """Test status determination thresholds"""
+        from invoice_processor.services.health_score_engine import InvoiceHealthScoreEngine
+        
+        engine = InvoiceHealthScoreEngine()
+        
+        # Test HEALTHY threshold (>= 8.0)
+        self.assertEqual(engine.THRESHOLD_HEALTHY, 8.0)
+        
+        # Test REVIEW threshold (>= 5.0)
+        self.assertEqual(engine.THRESHOLD_REVIEW, 5.0)
+
+
+# GST Cache Integration Tests
+
+from invoice_processor.models import GSTCacheEntry
+from invoice_processor.services.gst_cache_service import GSTCacheService, gst_cache_service
+from datetime import datetime
+
+
+class GSTCacheServiceTests(TestCase):
+    """Test cases for GST Cache Service"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.service = GSTCacheService()
+        self.test_gstin = '27AAPFU0939F1ZV'
+        self.test_verification_data = {
+            'lgnm': 'Test Company Private Limited',
+            'tradeNam': 'Test Company',
+            'sts': 'Active',
+            'rgdt': '01/01/2020',
+            'ctb': 'Private Limited Company',
+            'pradr': {
+                'adr': '123 Test Street, Test City, Test State - 123456'
+            },
+            'einvoiceStatus': 'Yes'
+        }
+    
+    def tearDown(self):
+        """Clean up test data"""
+        GSTCacheEntry.objects.all().delete()
+    
+    def test_lookup_gstin_cache_miss(self):
+        """Test cache lookup when GSTIN is not in cache"""
+        result = self.service.lookup_gstin(self.test_gstin)
+        self.assertIsNone(result)
+    
+    def test_lookup_gstin_cache_hit(self):
+        """Test cache lookup when GSTIN exists in cache"""
+        # Create cache entry
+        cache_entry = GSTCacheEntry.objects.create(
+            gstin=self.test_gstin,
+            legal_name='Test Company Private Limited',
+            trade_name='Test Company',
+            status='Active',
+            registration_date=datetime(2020, 1, 1).date(),
+            business_constitution='Private Limited Company',
+            principal_address='123 Test Street',
+            einvoice_status='Yes',
+            verification_count=1
+        )
+        
+        # Lookup should return the entry
+        result = self.service.lookup_gstin(self.test_gstin)
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(result.gstin, self.test_gstin)
+        self.assertEqual(result.legal_name, 'Test Company Private Limited')
+        self.assertEqual(result.verification_count, 2)  # Should increment
+    
+    def test_lookup_gstin_invalid_format(self):
+        """Test cache lookup with invalid GSTIN format"""
+        result = self.service.lookup_gstin('INVALID')
+        self.assertIsNone(result)
+        
+        result = self.service.lookup_gstin('')
+        self.assertIsNone(result)
+        
+        result = self.service.lookup_gstin(None)
+        self.assertIsNone(result)
+    
+    def test_lookup_gstin_case_insensitive(self):
+        """Test cache lookup is case-insensitive"""
+        # Create cache entry with uppercase
+        GSTCacheEntry.objects.create(
+            gstin=self.test_gstin.upper(),
+            legal_name='Test Company',
+            status='Active',
+            verification_count=1
+        )
+        
+        # Lookup with lowercase should work
+        result = self.service.lookup_gstin(self.test_gstin.lower())
+        self.assertIsNotNone(result)
+        self.assertEqual(result.gstin, self.test_gstin.upper())
+    
+    def test_add_to_cache_success(self):
+        """Test adding a new GSTIN to cache"""
+        result = self.service.add_to_cache(self.test_gstin, self.test_verification_data)
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(result.gstin, self.test_gstin.upper())
+        self.assertEqual(result.legal_name, 'Test Company Private Limited')
+        self.assertEqual(result.trade_name, 'Test Company')
+        self.assertEqual(result.status, 'Active')
+        self.assertEqual(result.business_constitution, 'Private Limited Company')
+        self.assertEqual(result.einvoice_status, 'Yes')
+        self.assertEqual(result.verification_count, 1)
+        
+        # Verify it's in database
+        self.assertTrue(GSTCacheEntry.objects.filter(gstin=self.test_gstin.upper()).exists())
+    
+    def test_add_to_cache_update_existing(self):
+        """Test updating an existing cache entry"""
+        # Create initial entry
+        initial_entry = GSTCacheEntry.objects.create(
+            gstin=self.test_gstin,
+            legal_name='Old Company Name',
+            status='Active',
+            verification_count=5
+        )
+        
+        # Update with new data
+        result = self.service.add_to_cache(self.test_gstin, self.test_verification_data)
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(result.gstin, self.test_gstin.upper())
+        self.assertEqual(result.legal_name, 'Test Company Private Limited')  # Updated
+        self.assertEqual(result.verification_count, 1)  # Reset to 1
+        
+        # Verify only one entry exists
+        self.assertEqual(GSTCacheEntry.objects.filter(gstin=self.test_gstin.upper()).count(), 1)
+    
+    def test_add_to_cache_invalid_gstin(self):
+        """Test adding invalid GSTIN to cache"""
+        result = self.service.add_to_cache('INVALID', self.test_verification_data)
+        self.assertIsNone(result)
+        
+        result = self.service.add_to_cache('', self.test_verification_data)
+        self.assertIsNone(result)
+        
+        result = self.service.add_to_cache(None, self.test_verification_data)
+        self.assertIsNone(result)
+    
+    def test_add_to_cache_invalid_data(self):
+        """Test adding GSTIN with invalid verification data"""
+        # Test with error in data
+        result = self.service.add_to_cache(self.test_gstin, {'error': 'Verification failed'})
+        self.assertIsNone(result)
+        
+        # Test with None data
+        result = self.service.add_to_cache(self.test_gstin, None)
+        self.assertIsNone(result)
+    
+    def test_add_to_cache_date_parsing(self):
+        """Test date parsing in add_to_cache"""
+        # Test with valid date
+        result = self.service.add_to_cache(self.test_gstin, self.test_verification_data)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.registration_date, datetime(2020, 1, 1).date())
+        
+        # Test with invalid date format
+        invalid_data = self.test_verification_data.copy()
+        invalid_data['rgdt'] = 'invalid-date'
+        result = self.service.add_to_cache('29AABCT1332L1ZZ', invalid_data)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.registration_date)
+    
+    def test_add_to_cache_address_extraction(self):
+        """Test address extraction from nested structure"""
+        result = self.service.add_to_cache(self.test_gstin, self.test_verification_data)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.principal_address, '123 Test Street, Test City, Test State - 123456')
+        
+        # Test with missing address
+        data_no_address = self.test_verification_data.copy()
+        data_no_address['pradr'] = {}
+        result = self.service.add_to_cache('29AABCT1332L1ZZ', data_no_address)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.principal_address, '')
+    
+    @patch('invoice_processor.services.gst_cache_service.verify_gstin')
+    def test_refresh_cache_entry_success(self, mock_verify):
+        """Test refreshing a cache entry with successful verification"""
+        # Create existing cache entry
+        GSTCacheEntry.objects.create(
+            gstin=self.test_gstin,
+            legal_name='Old Company Name',
+            status='Active',
+            verification_count=5
+        )
+        
+        # Mock successful verification
+        mock_verify.return_value = self.test_verification_data
+        
+        # Refresh entry
+        result = self.service.refresh_cache_entry(self.test_gstin, 'test-session-id', 'ABC123')
+        
+        self.assertTrue(result['success'])
+        self.assertIn('data', result)
+        self.assertEqual(result['data']['gstin'], self.test_gstin.upper())
+        self.assertEqual(result['data']['legal_name'], 'Test Company Private Limited')
+        
+        # Verify mock was called
+        mock_verify.assert_called_once_with('test-session-id', self.test_gstin.upper(), 'ABC123')
+        
+        # Verify cache was updated
+        updated_entry = GSTCacheEntry.objects.get(gstin=self.test_gstin.upper())
+        self.assertEqual(updated_entry.legal_name, 'Test Company Private Limited')
+    
+    @patch('invoice_processor.services.gst_cache_service.verify_gstin')
+    def test_refresh_cache_entry_verification_failed(self, mock_verify):
+        """Test refreshing cache entry when verification fails"""
+        # Mock failed verification
+        mock_verify.return_value = {'error': 'CAPTCHA verification failed'}
+        
+        # Refresh entry
+        result = self.service.refresh_cache_entry(self.test_gstin, 'test-session-id', 'ABC123')
+        
+        self.assertFalse(result['success'])
+        self.assertIn('error', result)
+        self.assertEqual(result['error'], 'CAPTCHA verification failed')
+    
+    def test_refresh_cache_entry_invalid_params(self):
+        """Test refresh with invalid parameters"""
+        # Invalid GSTIN
+        result = self.service.refresh_cache_entry('INVALID', 'session-id', 'captcha')
+        self.assertFalse(result['success'])
+        self.assertIn('Invalid GSTIN', result['error'])
+        
+        # Missing session ID
+        result = self.service.refresh_cache_entry(self.test_gstin, '', 'captcha')
+        self.assertFalse(result['success'])
+        self.assertIn('Session ID and CAPTCHA are required', result['error'])
+        
+        # Missing CAPTCHA
+        result = self.service.refresh_cache_entry(self.test_gstin, 'session-id', '')
+        self.assertFalse(result['success'])
+        self.assertIn('Session ID and CAPTCHA are required', result['error'])
+    
+    def test_get_all_entries_no_filter(self):
+        """Test getting all cache entries without filters"""
+        # Create multiple entries
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            status='Inactive',
+            verification_count=2
+        )
+        
+        result = self.service.get_all_entries()
+        self.assertEqual(result.count(), 2)
+    
+    def test_get_all_entries_search_by_gstin(self):
+        """Test searching cache entries by GSTIN"""
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = self.service.get_all_entries(search_query='27AAPFU')
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first().gstin, '27AAPFU0939F1ZV')
+    
+    def test_get_all_entries_search_by_name(self):
+        """Test searching cache entries by legal name"""
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Test Company Private Limited',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Another Company Ltd',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = self.service.get_all_entries(search_query='Test Company')
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first().legal_name, 'Test Company Private Limited')
+    
+    def test_get_all_entries_search_by_trade_name(self):
+        """Test searching cache entries by trade name"""
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            trade_name='Brand X',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            trade_name='Brand Y',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = self.service.get_all_entries(search_query='Brand X')
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first().trade_name, 'Brand X')
+    
+    def test_get_all_entries_filter_by_status(self):
+        """Test filtering cache entries by status"""
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            status='Inactive',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='24AABCT1332L1ZZ',
+            legal_name='Company C',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = self.service.get_all_entries(status_filter='Active')
+        self.assertEqual(result.count(), 2)
+        
+        result = self.service.get_all_entries(status_filter='Inactive')
+        self.assertEqual(result.count(), 1)
+    
+    def test_get_all_entries_combined_filters(self):
+        """Test combining search and status filters"""
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Test Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Test Company B',
+            status='Inactive',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='24AABCT1332L1ZZ',
+            legal_name='Other Company',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = self.service.get_all_entries(search_query='Test', status_filter='Active')
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first().legal_name, 'Test Company A')
+    
+    def test_get_all_entries_ordering(self):
+        """Test that entries are ordered by last_verified descending"""
+        from django.utils import timezone
+        from datetime import timedelta
+        import time
+        
+        # Create entries with slight delays to ensure different timestamps
+        entry1 = GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            status='Active',
+            verification_count=1
+        )
+        time.sleep(0.01)  # Small delay
+        
+        entry2 = GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            status='Active',
+            verification_count=1
+        )
+        time.sleep(0.01)  # Small delay
+        
+        entry3 = GSTCacheEntry.objects.create(
+            gstin='24AABCT1332L1ZZ',
+            legal_name='Company C',
+            status='Active',
+            verification_count=1
+        )
+        
+        result = list(self.service.get_all_entries())
+        
+        # Should be ordered by most recent first (entry3, entry2, entry1)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0].gstin, '24AABCT1332L1ZZ')  # Most recent
+        self.assertEqual(result[1].gstin, '29AABCT1332L1ZZ')
+        self.assertEqual(result[2].gstin, '27AAPFU0939F1ZV')  # Oldest
+
+
+class GSTCacheViewTests(TestCase):
+    """Test cases for GST Cache views and endpoints"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from django.utils import timezone
+        self.timezone = timezone
+        
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123'
+        )
+        self.cache_url = reverse('gst_cache')
+        self.check_cache_url = reverse('check_gst_cache')
+        self.refresh_cache_url = reverse('refresh_gst_cache_entry')
+    
+    def tearDown(self):
+        """Clean up test data"""
+        GSTCacheEntry.objects.all().delete()
+    
+    def test_gst_cache_page_requires_authentication(self):
+        """Test that GST cache page requires authentication"""
+        response = self.client.get(self.cache_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login/', response.url)
+    
+    def test_gst_cache_page_loads(self):
+        """Test that GST cache page loads successfully"""
+        self.client.login(username='testuser', password='testpass123')
+        response = self.client.get(self.cache_url)
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'gst_cache.html')
+    
+    def test_gst_cache_page_displays_entries(self):
+        """Test that cache entries are displayed on the page"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        # Create cache entries
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Test Company A',
+            status='Active',
+            verification_count=5
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Test Company B',
+            status='Inactive',
+            verification_count=3
+        )
+        
+        response = self.client.get(self.cache_url)
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['page_obj']), 2)
+        self.assertEqual(response.context['total_count'], 2)
+    
+    def test_gst_cache_page_search(self):
+        """Test search functionality on cache page"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Test Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Another Company',
+            status='Active',
+            verification_count=1
+        )
+        
+        response = self.client.get(self.cache_url, {'search': 'Test Company'})
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['page_obj']), 1)
+        self.assertEqual(response.context['page_obj'][0].legal_name, 'Test Company A')
+    
+    def test_gst_cache_page_status_filter(self):
+        """Test status filtering on cache page"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        GSTCacheEntry.objects.create(
+            gstin='27AAPFU0939F1ZV',
+            legal_name='Company A',
+            status='Active',
+            verification_count=1
+        )
+        GSTCacheEntry.objects.create(
+            gstin='29AABCT1332L1ZZ',
+            legal_name='Company B',
+            status='Inactive',
+            verification_count=1
+        )
+        
+        response = self.client.get(self.cache_url, {'status': 'Active'})
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['page_obj']), 1)
+        self.assertEqual(response.context['page_obj'][0].status, 'Active')
+    
+    @patch('invoice_processor.views.gst_cache_service.lookup_gstin')
+    def test_check_gst_cache_hit(self, mock_lookup):
+        """Test check_gst_cache endpoint with cache hit"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        # Create test invoice
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-001',
+            invoice_date=datetime(2023, 12, 1).date(),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice.pdf'
+        )
+        
+        # Mock cache hit
+        mock_cache_entry = Mock()
+        mock_cache_entry.legal_name = 'Test Company'
+        mock_cache_entry.trade_name = 'Test Brand'
+        mock_cache_entry.status = 'Active'
+        mock_cache_entry.registration_date = datetime(2020, 1, 1).date()
+        mock_cache_entry.business_constitution = 'Private Limited'
+        mock_cache_entry.principal_address = '123 Test Street'
+        mock_cache_entry.einvoice_status = 'Yes'
+        mock_cache_entry.last_verified = self.timezone.now()
+        mock_lookup.return_value = mock_cache_entry
+        
+        response = self.client.post(
+            self.check_cache_url,
+            json.dumps({'invoice_id': invoice.id}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        self.assertTrue(data['success'])
+        self.assertTrue(data['cached'])
+        self.assertEqual(data['new_status'], 'VERIFIED')
+        self.assertIn('cache_data', data)
+        
+        # Verify invoice was updated
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.gst_verification_status, 'VERIFIED')
+    
+    @patch('invoice_processor.views.gst_cache_service.lookup_gstin')
+    def test_check_gst_cache_miss(self, mock_lookup):
+        """Test check_gst_cache endpoint with cache miss"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        # Create test invoice
+        invoice = Invoice.objects.create(
+            invoice_id='TEST-001',
+            invoice_date=datetime(2023, 12, 1).date(),
+            vendor_name='Test Vendor',
+            vendor_gstin='27AAPFU0939F1ZV',
+            billed_company_gstin='29AABCT1332L1ZZ',
+            grand_total=Decimal('1000.00'),
+            uploaded_by=self.user,
+            file_path='test/invoice.pdf'
+        )
+        
+        # Mock cache miss
+        mock_lookup.return_value = None
+        
+        response = self.client.post(
+            self.check_cache_url,
+            json.dumps({'invoice_id': invoice.id}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        self.assertTrue(data['success'])
+        self.assertFalse(data['cached'])
+        self.assertIn('CAPTCHA verification required', data['message'])
+    
+    @patch('invoice_processor.views.gst_cache_service.refresh_cache_entry')
+    def test_refresh_gst_cache_entry_success(self, mock_refresh):
+        """Test refresh cache entry endpoint with success"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        # Mock successful refresh
+        mock_refresh.return_value = {
+            'success': True,
+            'data': {
+                'gstin': '27AAPFU0939F1ZV',
+                'legal_name': 'Updated Company Name',
+                'status': 'Active',
+                'last_verified': self.timezone.now().isoformat()
+            }
+        }
+        
+        response = self.client.post(
+            self.refresh_cache_url,
+            json.dumps({
+                'gstin': '27AAPFU0939F1ZV',
+                'session_id': 'test-session-id',
+                'captcha': 'ABC123'
+            }),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        
+        self.assertTrue(data['success'])
+        self.assertIn('data', data)
+        self.assertEqual(data['data']['legal_name'], 'Updated Company Name')
+    
+    @patch('invoice_processor.views.gst_cache_service.refresh_cache_entry')
+    def test_refresh_gst_cache_entry_failure(self, mock_refresh):
+        """Test refresh cache entry endpoint with failure"""
+        self.client.login(username='testuser', password='testpass123')
+        
+        # Mock failed refresh
+        mock_refresh.return_value = {
+            'success': False,
+            'error': 'CAPTCHA verification failed'
+        }
+        
+        response = self.client.post(
+            self.refresh_cache_url,
+            json.dumps({
+                'gstin': '27AAPFU0939F1ZV',
+                'session_id': 'test-session-id',
+                'captcha': 'WRONG'
+            }),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content)
+        
+        self.assertFalse(data['success'])
+        self.assertIn('error', data)

@@ -207,3 +207,36 @@ LOGS_DIR.mkdir(exist_ok=True)
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Celery Configuration
+# Redis as message broker and result backend
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+
+# Celery task settings
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+# Task execution settings
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes hard limit
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes soft limit
+CELERY_TASK_ACKS_LATE = True  # Acknowledge tasks after completion
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Fetch one task at a time for better distribution
+
+# Task retry settings
+CELERY_TASK_DEFAULT_RETRY_DELAY = 60  # 1 minute
+CELERY_TASK_MAX_RETRIES = 3
+
+# Result backend settings
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+
+# Worker settings
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks to prevent memory leaks
+CELERY_WORKER_DISABLE_RATE_LIMITS = False
+
+# Logging
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # Don't hijack root logger

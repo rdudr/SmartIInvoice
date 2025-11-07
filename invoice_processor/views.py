@@ -17,10 +17,15 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 
 from .forms import CustomUserCreationForm, CustomAuthenticationForm, InvoiceUploadForm
-from .models import Invoice, LineItem, ComplianceFlag
+from .models import Invoice, LineItem, ComplianceFlag, InvoiceHealthScore
 from .services.gemini_service import extract_data_from_image
 from .services.analysis_engine import run_all_checks, normalize_product_key
 from .services.gst_client import get_captcha, verify_gstin
+from .services.health_score_engine import InvoiceHealthScoreEngine
+from .services.gst_cache_service import gst_cache_service
+from .services.confidence_score_calculator import calculate_confidence_score
+from .services.manual_entry_service import manual_entry_service
+from .services.dashboard_analytics_service import dashboard_analytics_service
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +60,10 @@ def handler403(request, exception):
 @login_required
 def dashboard(request):
     """Dashboard view with metrics calculation logic"""
+    
+    # Get date range filter parameter (default: 7 days)
+    days_filter = int(request.GET.get('days', 7))
+    days_filter = max(5, min(14, days_filter))  # Clamp between 5 and 14
     
     # Calculate key metrics
     # 1. Invoices Awaiting Verification
@@ -93,6 +102,22 @@ def dashboard(request):
         critical_flags_count=Count('compliance_flags', filter=Q(compliance_flags__severity='CRITICAL'))
     ).order_by('-critical_flags_count', '-uploaded_at')[:5]
     
+    # Phase 2 Analytics
+    # Invoice Per Day data for bar chart
+    invoice_per_day_data = dashboard_analytics_service.get_invoice_per_day_data(
+        request.user, 
+        days=days_filter
+    )
+    
+    # Money Flow by HSN/SAC for donut chart
+    money_flow_data = dashboard_analytics_service.get_money_flow_by_hsn(request.user)
+    
+    # Company Leaderboard
+    company_leaderboard = dashboard_analytics_service.get_company_leaderboard(request.user)
+    
+    # Red Flag List (high-risk invoices)
+    red_flag_list = dashboard_analytics_service.get_red_flag_list(request.user)
+    
     context = {
         'metrics': {
             'invoices_awaiting_verification': invoices_awaiting_verification,
@@ -102,6 +127,12 @@ def dashboard(request):
         'anomaly_breakdown': list(anomaly_breakdown),
         'recent_invoices': recent_invoices,
         'suspected_invoices': suspected_invoices,
+        # Phase 2 Analytics
+        'invoice_per_day_data': invoice_per_day_data,
+        'money_flow_data': money_flow_data,
+        'company_leaderboard': company_leaderboard,
+        'red_flag_list': red_flag_list,
+        'days_filter': days_filter,
     }
     
     return render(request, 'dashboard.html', context)
@@ -192,11 +223,40 @@ def upload_invoice(request):
             error_code = extracted_data.get('error_code', 'NOT_AN_INVOICE')
             
             logger.warning(f"Invoice extraction failed: {error_msg}")
-            return JsonResponse({
-                'success': False,
-                'error': error_msg,
-                'error_code': error_code
-            }, status=400)
+            
+            # Create invoice record flagged for manual entry
+            try:
+                with transaction.atomic():
+                    invoice = Invoice.objects.create(
+                        invoice_id='',  # Will be filled manually
+                        invoice_date=None,
+                        vendor_name='',
+                        vendor_gstin='',
+                        billed_company_gstin='',
+                        grand_total=Decimal('0'),
+                        status='PENDING_ANALYSIS',
+                        uploaded_by=request.user,
+                        file_path=invoice_file,
+                        extraction_method='MANUAL',
+                        extraction_failure_reason=error_msg
+                    )
+                    
+                    logger.info(f"Invoice {invoice.id} created and flagged for manual entry")
+                    
+                    return JsonResponse({
+                        'success': False,
+                        'error': error_msg,
+                        'error_code': error_code,
+                        'requires_manual_entry': True,
+                        'invoice_id': invoice.id
+                    }, status=400)
+            except Exception as e:
+                logger.error(f"Failed to create invoice for manual entry: {str(e)}")
+                return JsonResponse({
+                    'success': False,
+                    'error': error_msg,
+                    'error_code': error_code
+                }, status=400)
         
         # Step 3: Validate extracted data has minimum required fields
         required_fields = ['invoice_id', 'vendor_name']
@@ -204,14 +264,53 @@ def upload_invoice(request):
         
         if missing_fields:
             logger.warning(f"Missing required fields in extracted data: {missing_fields}")
-            return JsonResponse({
-                'success': False,
-                'error': 'Unable to extract essential invoice information from the image',
-                'details': f'Could not find: {", ".join(missing_fields)}. Please ensure the invoice is clear and complete.',
-                'error_code': 'INCOMPLETE_EXTRACTION'
-            }, status=400)
+            error_msg = f'Could not extract essential information: {", ".join(missing_fields)}. Please enter data manually.'
+            
+            # Create invoice record flagged for manual entry
+            try:
+                with transaction.atomic():
+                    invoice = Invoice.objects.create(
+                        invoice_id='',  # Will be filled manually
+                        invoice_date=None,
+                        vendor_name='',
+                        vendor_gstin='',
+                        billed_company_gstin='',
+                        grand_total=Decimal('0'),
+                        status='PENDING_ANALYSIS',
+                        uploaded_by=request.user,
+                        file_path=invoice_file,
+                        extraction_method='MANUAL',
+                        extraction_failure_reason=error_msg
+                    )
+                    
+                    logger.info(f"Invoice {invoice.id} created and flagged for manual entry due to incomplete extraction")
+                    
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Unable to extract essential invoice information from the image',
+                        'details': error_msg,
+                        'error_code': 'INCOMPLETE_EXTRACTION',
+                        'requires_manual_entry': True,
+                        'invoice_id': invoice.id
+                    }, status=400)
+            except Exception as e:
+                logger.error(f"Failed to create invoice for manual entry: {str(e)}")
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Unable to extract essential invoice information from the image',
+                    'details': error_msg,
+                    'error_code': 'INCOMPLETE_EXTRACTION'
+                }, status=400)
         
-        # Step 4: Save invoice and line items in a transaction with error handling
+        # Step 4: Calculate confidence score for the extraction
+        logger.info("Calculating confidence score for extracted data")
+        confidence_result = calculate_confidence_score(extracted_data)
+        confidence_score = confidence_result['score']
+        confidence_level = confidence_result['level']
+        
+        logger.info(f"Confidence score: {confidence_score}% ({confidence_level})")
+        
+        # Step 5: Save invoice and line items in a transaction with error handling
         try:
             with transaction.atomic():
                 # Parse invoice date if provided
@@ -229,7 +328,7 @@ def upload_invoice(request):
                     logger.warning(f"Invalid grand_total value: {extracted_data.get('grand_total')} - {str(e)}")
                     grand_total = Decimal('0')
                 
-                # Create Invoice record
+                # Create Invoice record with confidence score
                 invoice = Invoice.objects.create(
                     invoice_id=extracted_data.get('invoice_id', ''),
                     invoice_date=invoice_date,
@@ -239,7 +338,8 @@ def upload_invoice(request):
                     grand_total=grand_total,
                     status='PENDING_ANALYSIS',
                     uploaded_by=request.user,
-                    file_path=invoice_file
+                    file_path=invoice_file,
+                    ai_confidence_score=Decimal(str(confidence_score))
                 )
                 
                 # Create LineItem records with error handling
@@ -273,7 +373,7 @@ def upload_invoice(request):
                             logger.warning(f"Skipping invalid line item: {item_data} - {str(e)}")
                             continue
                 
-                # Step 5: Run compliance checks with error handling
+                # Step 6: Run compliance checks with error handling
                 logger.info(f"Running compliance checks for invoice {invoice.invoice_id}")
                 
                 try:
@@ -313,6 +413,48 @@ def upload_invoice(request):
                     
                     compliance_flags = [ComplianceFlag.objects.filter(invoice=invoice).first()]
                     critical_flags = []
+                
+                # Step 7: Calculate and store health score
+                logger.info(f"Calculating health score for invoice {invoice.invoice_id}")
+                
+                try:
+                    health_engine = InvoiceHealthScoreEngine()
+                    health_result = health_engine.calculate_health_score(invoice)
+                    
+                    # Store health score in database
+                    InvoiceHealthScore.objects.create(
+                        invoice=invoice,
+                        overall_score=Decimal(str(health_result['score'])),
+                        status=health_result['status'],
+                        data_completeness_score=Decimal(str(health_result['breakdown']['data_completeness'])),
+                        verification_score=Decimal(str(health_result['breakdown']['verification'])),
+                        compliance_score=Decimal(str(health_result['breakdown']['compliance'])),
+                        fraud_detection_score=Decimal(str(health_result['breakdown']['fraud_detection'])),
+                        ai_confidence_score_component=Decimal(str(health_result['breakdown']['ai_confidence'])),
+                        key_flags=health_result['key_flags']
+                    )
+                    
+                    logger.info(f"Health score calculated for invoice {invoice.invoice_id}: "
+                               f"{health_result['score']} ({health_result['status']})")
+                    
+                except Exception as e:
+                    logger.error(f"Error calculating health score: {str(e)}")
+                    # Health score calculation failure shouldn't block invoice processing
+                    # Create a default health score entry
+                    try:
+                        InvoiceHealthScore.objects.create(
+                            invoice=invoice,
+                            overall_score=Decimal('0.0'),
+                            status='AT_RISK',
+                            data_completeness_score=Decimal('0.0'),
+                            verification_score=Decimal('0.0'),
+                            compliance_score=Decimal('0.0'),
+                            fraud_detection_score=Decimal('0.0'),
+                            ai_confidence_score_component=Decimal('0.0'),
+                            key_flags=[f'Health score calculation error: {str(e)[:100]}']
+                        )
+                    except Exception as inner_e:
+                        logger.error(f"Failed to create default health score: {str(inner_e)}")
         
         except Exception as e:
             logger.error(f"Database error during invoice save: {str(e)}")
@@ -323,7 +465,7 @@ def upload_invoice(request):
                 'error_code': 'DATABASE_ERROR'
             }, status=500)
         
-        # Step 6: Return success response
+        # Step 8: Return success response with confidence score
         return JsonResponse({
             'success': True,
             'message': 'Invoice uploaded and processed successfully',
@@ -335,7 +477,9 @@ def upload_invoice(request):
                 'grand_total': str(invoice.grand_total),
                 'line_items_count': created_line_items,
                 'compliance_flags_count': len(compliance_flags) if 'compliance_flags' in locals() else 0,
-                'critical_flags_count': len(critical_flags) if 'critical_flags' in locals() else 0
+                'critical_flags_count': len(critical_flags) if 'critical_flags' in locals() else 0,
+                'confidence_score': float(confidence_score),
+                'confidence_level': confidence_level
             }
         })
         
@@ -363,13 +507,16 @@ def gst_verification(request):
     """
     GST Verification page with invoice table, pagination, and filtering
     """
-    # Get filter parameter
+    # Get filter parameters
     status_filter = request.GET.get('status', 'all')
+    health_filter = request.GET.get('health', 'all')
+    confidence_filter = request.GET.get('confidence', 'all')
+    sort_by = request.GET.get('sort', 'date')
     
-    # Base queryset for user's invoices
-    invoices_qs = Invoice.objects.filter(uploaded_by=request.user).order_by('-uploaded_at')
+    # Base queryset for user's invoices with health score and duplicate link
+    invoices_qs = Invoice.objects.filter(uploaded_by=request.user).select_related('health_score').prefetch_related('duplicate_link')
     
-    # Apply status filter
+    # Apply GST verification status filter
     if status_filter == 'pending':
         invoices_qs = invoices_qs.filter(gst_verification_status='PENDING')
     elif status_filter == 'verified':
@@ -377,6 +524,36 @@ def gst_verification(request):
     elif status_filter == 'failed':
         invoices_qs = invoices_qs.filter(gst_verification_status='FAILED')
     # 'all' shows all invoices (no additional filter)
+    
+    # Apply health score filter
+    if health_filter == 'healthy':
+        invoices_qs = invoices_qs.filter(health_score__status='HEALTHY')
+    elif health_filter == 'review':
+        invoices_qs = invoices_qs.filter(health_score__status='REVIEW')
+    elif health_filter == 'at_risk':
+        invoices_qs = invoices_qs.filter(health_score__status='AT_RISK')
+    # 'all' shows all invoices (no additional filter)
+    
+    # Apply confidence score filter
+    if confidence_filter == 'high':
+        invoices_qs = invoices_qs.filter(ai_confidence_score__gte=80)
+    elif confidence_filter == 'medium':
+        invoices_qs = invoices_qs.filter(ai_confidence_score__gte=50, ai_confidence_score__lt=80)
+    elif confidence_filter == 'low':
+        invoices_qs = invoices_qs.filter(ai_confidence_score__lt=50)
+    # 'all' shows all invoices (no additional filter)
+    
+    # Apply sorting
+    if sort_by == 'health_asc':
+        invoices_qs = invoices_qs.order_by('health_score__overall_score', '-uploaded_at')
+    elif sort_by == 'health_desc':
+        invoices_qs = invoices_qs.order_by('-health_score__overall_score', '-uploaded_at')
+    elif sort_by == 'confidence_asc':
+        invoices_qs = invoices_qs.order_by('ai_confidence_score', '-uploaded_at')
+    elif sort_by == 'confidence_desc':
+        invoices_qs = invoices_qs.order_by('-ai_confidence_score', '-uploaded_at')
+    else:  # default: sort by date
+        invoices_qs = invoices_qs.order_by('-uploaded_at')
     
     # Pagination - 10 rows per page
     paginator = Paginator(invoices_qs, 10)
@@ -386,10 +563,130 @@ def gst_verification(request):
     context = {
         'page_obj': page_obj,
         'current_filter': status_filter,
+        'health_filter': health_filter,
+        'confidence_filter': confidence_filter,
+        'sort_by': sort_by,
         'total_count': invoices_qs.count(),
     }
     
     return render(request, 'gst_verification.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def check_gst_cache(request):
+    """
+    AJAX endpoint to check if GSTIN exists in cache or if invoice is a duplicate
+    """
+    try:
+        from .services.duplicate_linking_service import duplicate_linking_service
+        
+        # Parse JSON request body
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in cache check request: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid request format',
+                'error_code': 'INVALID_JSON'
+            }, status=400)
+        
+        invoice_id = data.get('invoice_id')
+        
+        # Validate required parameters
+        if not invoice_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invoice ID is required',
+                'error_code': 'MISSING_INVOICE_ID'
+            }, status=400)
+        
+        # Get invoice and verify ownership
+        try:
+            invoice = get_object_or_404(Invoice, id=invoice_id, uploaded_by=request.user)
+        except Exception as e:
+            logger.error(f"Invoice not found or access denied: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Invoice not found or access denied',
+                'error_code': 'INVOICE_NOT_FOUND'
+            }, status=404)
+        
+        # Check if this invoice is a linked duplicate
+        if duplicate_linking_service.is_duplicate(invoice):
+            original = duplicate_linking_service.get_original_invoice(invoice)
+            if original:
+                logger.info(f"Invoice {invoice.id} is a duplicate of {original.id}, "
+                           f"skipping GST verification")
+                
+                return JsonResponse({
+                    'success': True,
+                    'is_duplicate': True,
+                    'message': f'This is a duplicate of invoice #{original.id}. '
+                              f'GST verification not required.',
+                    'invoice_id': invoice.id,
+                    'original_invoice_id': original.id,
+                    'new_status': invoice.gst_verification_status
+                })
+        
+        if not invoice.vendor_gstin:
+            return JsonResponse({
+                'success': False,
+                'cached': False,
+                'error': 'No GSTIN found for this invoice'
+            })
+        
+        # Check cache
+        cache_entry = gst_cache_service.lookup_gstin(invoice.vendor_gstin)
+        
+        if cache_entry:
+            # Cache hit - automatically verify using cached data
+            logger.info(f"Cache hit for GSTIN {invoice.vendor_gstin}, auto-verifying invoice {invoice.invoice_id}")
+            
+            try:
+                invoice.gst_verification_status = 'VERIFIED'
+                invoice.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'cached': True,
+                    'message': 'GST verification completed using cached data',
+                    'invoice_id': invoice.id,
+                    'new_status': 'VERIFIED',
+                    'cache_data': {
+                        'legal_name': cache_entry.legal_name,
+                        'trade_name': cache_entry.trade_name,
+                        'status': cache_entry.status,
+                        'registration_date': cache_entry.registration_date.isoformat() if cache_entry.registration_date else None,
+                        'business_constitution': cache_entry.business_constitution,
+                        'principal_address': cache_entry.principal_address,
+                        'einvoice_status': cache_entry.einvoice_status,
+                        'last_verified': cache_entry.last_verified.isoformat(),
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Failed to update invoice status from cache: {str(e)}")
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Failed to update invoice status',
+                    'error_code': 'STATUS_UPDATE_ERROR'
+                }, status=500)
+        else:
+            # Cache miss - need CAPTCHA verification
+            return JsonResponse({
+                'success': True,
+                'cached': False,
+                'message': 'GSTIN not in cache, CAPTCHA verification required'
+            })
+        
+    except Exception as e:
+        logger.error(f"Unexpected error checking GST cache: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'An unexpected error occurred',
+            'error_code': 'UNEXPECTED_ERROR'
+        }, status=500)
 
 
 @login_required
@@ -593,6 +890,17 @@ def verify_gst(request):
                     'error_code': 'STATUS_UPDATE_ERROR'
                 }, status=500)
             
+            # Add to cache for future use
+            try:
+                cache_entry = gst_cache_service.add_to_cache(invoice.vendor_gstin, verification_response)
+                if cache_entry:
+                    logger.info(f"Added GSTIN {invoice.vendor_gstin} to cache")
+                else:
+                    logger.warning(f"Failed to add GSTIN {invoice.vendor_gstin} to cache")
+            except Exception as e:
+                logger.error(f"Error adding GSTIN to cache: {str(e)}")
+                # Don't fail the verification if caching fails
+            
             return JsonResponse({
                 'success': True,
                 'message': 'GST verification completed successfully',
@@ -607,4 +915,574 @@ def verify_gst(request):
             'success': False,
             'error': 'An unexpected error occurred during GST verification. Please try again.',
             'error_code': 'UNEXPECTED_ERROR'
+        }, status=500)
+
+
+@login_required
+def invoice_detail(request, invoice_id):
+    """
+    Invoice detail page showing comprehensive information including health score and duplicate relationships
+    """
+    from .services.duplicate_linking_service import duplicate_linking_service
+    
+    # Get invoice with related data
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('health_score').prefetch_related('line_items', 'compliance_flags'),
+        id=invoice_id,
+        uploaded_by=request.user
+    )
+    
+    # Get health score breakdown if available
+    health_score_data = None
+    if hasattr(invoice, 'health_score'):
+        health_score_data = {
+            'overall_score': invoice.health_score.overall_score,
+            'status': invoice.health_score.status,
+            'breakdown': {
+                'data_completeness': invoice.health_score.data_completeness_score,
+                'verification': invoice.health_score.verification_score,
+                'compliance': invoice.health_score.compliance_score,
+                'fraud_detection': invoice.health_score.fraud_detection_score,
+                'ai_confidence': invoice.health_score.ai_confidence_score_component,
+            },
+            'key_flags': invoice.health_score.key_flags,
+            'calculated_at': invoice.health_score.calculated_at,
+        }
+    
+    # Check duplicate relationships
+    is_duplicate = duplicate_linking_service.is_duplicate(invoice)
+    original_invoice = None
+    duplicate_invoices = []
+    
+    if is_duplicate:
+        # This invoice is a duplicate - get the original
+        original_invoice = duplicate_linking_service.get_original_invoice(invoice)
+    else:
+        # This might be an original - get all duplicates
+        duplicate_invoices = duplicate_linking_service.get_all_duplicates(invoice)
+    
+    context = {
+        'invoice': invoice,
+        'health_score_data': health_score_data,
+        'is_duplicate': is_duplicate,
+        'original_invoice': original_invoice,
+        'duplicate_invoices': duplicate_invoices,
+    }
+    
+    return render(request, 'invoice_detail.html', context)
+
+
+@login_required
+def gst_cache_management(request):
+    """
+    GST Cache management page with search, filter, and refresh functionality
+    """
+    # Get filter parameters
+    search_query = request.GET.get('search', '').strip()
+    status_filter = request.GET.get('status', '')
+    sort_by = request.GET.get('sort', 'recent')
+    
+    # Get cache entries using the service
+    cache_entries = gst_cache_service.get_all_entries(
+        search_query=search_query if search_query else None,
+        status_filter=status_filter if status_filter else None
+    )
+    
+    # Apply sorting
+    if sort_by == 'gstin':
+        cache_entries = cache_entries.order_by('gstin')
+    elif sort_by == 'name':
+        cache_entries = cache_entries.order_by('legal_name')
+    elif sort_by == 'oldest':
+        cache_entries = cache_entries.order_by('last_verified')
+    else:  # default: recent
+        cache_entries = cache_entries.order_by('-last_verified')
+    
+    # Pagination - 25 rows per page
+    paginator = Paginator(cache_entries, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'page_obj': page_obj,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'sort_by': sort_by,
+        'total_count': cache_entries.count(),
+    }
+    
+    return render(request, 'gst_cache.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def refresh_gst_cache_entry(request):
+    """
+    AJAX endpoint to refresh a specific GST cache entry
+    """
+    try:
+        # Parse JSON request body
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in refresh cache request: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid request format',
+                'error_code': 'INVALID_JSON'
+            }, status=400)
+        
+        gstin = data.get('gstin')
+        session_id = data.get('session_id')
+        captcha = data.get('captcha')
+        
+        # Validate required parameters
+        if not gstin:
+            return JsonResponse({
+                'success': False,
+                'error': 'GSTIN is required',
+                'error_code': 'MISSING_GSTIN'
+            }, status=400)
+        
+        if not session_id or not captcha:
+            return JsonResponse({
+                'success': False,
+                'error': 'Session ID and CAPTCHA are required',
+                'error_code': 'MISSING_CAPTCHA_DATA'
+            }, status=400)
+        
+        # Refresh cache entry
+        result = gst_cache_service.refresh_cache_entry(gstin, session_id, captcha)
+        
+        if result['success']:
+            return JsonResponse({
+                'success': True,
+                'message': 'Cache entry refreshed successfully',
+                'data': result['data']
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': result.get('error', 'Failed to refresh cache entry')
+            }, status=400)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error refreshing cache entry: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'An unexpected error occurred',
+            'error_code': 'UNEXPECTED_ERROR'
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_upload_invoices(request):
+    """
+    Handle bulk invoice upload with multiple files
+    """
+    from .services.bulk_upload_handler import bulk_upload_handler
+    
+    try:
+        # Get uploaded files
+        files = request.FILES.getlist('invoice_files')
+        
+        if not files:
+            return JsonResponse({
+                'success': False,
+                'error': 'No files uploaded',
+                'error_code': 'NO_FILES'
+            }, status=400)
+        
+        # Validate file count (max 50 files per batch)
+        if len(files) > 50:
+            return JsonResponse({
+                'success': False,
+                'error': 'Maximum 50 files allowed per batch',
+                'error_code': 'TOO_MANY_FILES'
+            }, status=400)
+        
+        # Validate each file
+        for file in files:
+            # Check file size (max 10MB per file)
+            if file.size > 10 * 1024 * 1024:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'File {file.name} exceeds 10MB limit',
+                    'error_code': 'FILE_TOO_LARGE'
+                }, status=400)
+            
+            # Check file type
+            allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
+            if file.content_type not in allowed_types:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'File {file.name} has invalid type. Only JPG, PNG, and PDF allowed.',
+                    'error_code': 'INVALID_FILE_TYPE'
+                }, status=400)
+        
+        logger.info(f"Processing bulk upload of {len(files)} files for user {request.user.username}")
+        
+        # Handle bulk upload
+        result = bulk_upload_handler.handle_bulk_upload(request.user, files)
+        
+        if result['success']:
+            return JsonResponse(result)
+        else:
+            return JsonResponse(result, status=400)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in bulk upload: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'An unexpected error occurred during bulk upload',
+            'error_code': 'UNEXPECTED_ERROR'
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def get_batch_status(request, batch_id):
+    """
+    AJAX endpoint to get batch processing status
+    """
+    from .services.bulk_upload_handler import bulk_upload_handler
+    
+    try:
+        result = bulk_upload_handler.get_batch_status(batch_id, request.user)
+        
+        if result['success']:
+            return JsonResponse(result)
+        else:
+            return JsonResponse(result, status=404 if result.get('error_code') == 'BATCH_NOT_FOUND' else 400)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error getting batch status: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'An unexpected error occurred',
+            'error_code': 'UNEXPECTED_ERROR'
+        }, status=500)
+
+
+@login_required
+def manual_entry(request, invoice_id):
+    """
+    Manual entry page for invoices where AI extraction failed
+    """
+    from .forms import ManualInvoiceEntryForm
+    
+    # Get invoice and verify ownership
+    invoice = get_object_or_404(
+        Invoice,
+        id=invoice_id,
+        uploaded_by=request.user
+    )
+    
+    # Check if this invoice requires manual entry
+    if invoice.extraction_method != 'MANUAL':
+        messages.warning(request, 'This invoice does not require manual entry.')
+        return redirect('invoice_detail', invoice_id=invoice.id)
+    
+    # If GET request, show the form
+    if request.method == 'GET':
+        # Pre-populate form with any existing data
+        initial_data = {}
+        if invoice.invoice_id:
+            initial_data['invoice_id'] = invoice.invoice_id
+        if invoice.invoice_date:
+            initial_data['invoice_date'] = invoice.invoice_date
+        if invoice.vendor_name:
+            initial_data['vendor_name'] = invoice.vendor_name
+        if invoice.vendor_gstin:
+            initial_data['vendor_gstin'] = invoice.vendor_gstin
+        if invoice.billed_company_gstin:
+            initial_data['billed_company_gstin'] = invoice.billed_company_gstin
+        if invoice.grand_total:
+            initial_data['grand_total'] = invoice.grand_total
+        
+        form = ManualInvoiceEntryForm(initial=initial_data)
+        
+        context = {
+            'invoice': invoice,
+            'form': form,
+            'failure_reason': invoice.extraction_failure_reason or 'AI extraction failed',
+        }
+        
+        return render(request, 'manual_entry.html', context)
+    
+    # POST request handled in separate view
+    return redirect('manual_entry', invoice_id=invoice.id)
+
+
+@login_required
+@require_http_methods(["POST"])
+def submit_manual_entry(request, invoice_id):
+    """
+    Handle manual entry form submission
+    """
+    from .forms import ManualInvoiceEntryForm
+    
+    # Get invoice and verify ownership
+    invoice = get_object_or_404(
+        Invoice,
+        id=invoice_id,
+        uploaded_by=request.user
+    )
+    
+    # Check if this invoice requires manual entry
+    if invoice.extraction_method != 'MANUAL':
+        messages.error(request, 'This invoice does not require manual entry.')
+        return redirect('invoice_detail', invoice_id=invoice.id)
+    
+    # Parse form data
+    form = ManualInvoiceEntryForm(request.POST)
+    
+    if not form.is_valid():
+        # Re-render form with errors
+        context = {
+            'invoice': invoice,
+            'form': form,
+            'failure_reason': invoice.extraction_failure_reason or 'AI extraction failed',
+        }
+        return render(request, 'manual_entry.html', context)
+    
+    # Extract line items from POST data
+    line_items = []
+    line_item_index = 1
+    
+    while True:
+        description = request.POST.get(f'line_items[{line_item_index}][description]')
+        if not description:
+            break
+        
+        try:
+            line_item = {
+                'description': description.strip(),
+                'hsn_sac_code': request.POST.get(f'line_items[{line_item_index}][hsn_sac_code]', '').strip(),
+                'quantity': request.POST.get(f'line_items[{line_item_index}][quantity]'),
+                'unit_price': request.POST.get(f'line_items[{line_item_index}][unit_price]'),
+                'billed_gst_rate': request.POST.get(f'line_items[{line_item_index}][billed_gst_rate]'),
+                'line_total': request.POST.get(f'line_items[{line_item_index}][line_total]'),
+            }
+            line_items.append(line_item)
+        except Exception as e:
+            logger.error(f"Error parsing line item {line_item_index}: {str(e)}")
+        
+        line_item_index += 1
+    
+    # Prepare data for validation
+    manual_data = {
+        'invoice_id': form.cleaned_data['invoice_id'],
+        'invoice_date': form.cleaned_data['invoice_date'].isoformat() if form.cleaned_data['invoice_date'] else None,
+        'vendor_name': form.cleaned_data['vendor_name'],
+        'vendor_gstin': form.cleaned_data.get('vendor_gstin', ''),
+        'billed_company_gstin': form.cleaned_data.get('billed_company_gstin', ''),
+        'grand_total': str(form.cleaned_data['grand_total']),
+        'line_items': line_items
+    }
+    
+    # Validate using ManualEntryService
+    is_valid, validation_errors = manual_entry_service.validate_manual_entry(manual_data)
+    
+    if not is_valid:
+        # Add validation errors to messages
+        for error in validation_errors:
+            messages.error(request, error)
+        
+        # Re-render form
+        context = {
+            'invoice': invoice,
+            'form': form,
+            'failure_reason': invoice.extraction_failure_reason or 'AI extraction failed',
+        }
+        return render(request, 'manual_entry.html', context)
+    
+    # Save invoice and line items in a transaction
+    try:
+        with transaction.atomic():
+            # Update invoice with manual data
+            invoice.invoice_id = manual_data['invoice_id']
+            invoice.invoice_date = form.cleaned_data['invoice_date']
+            invoice.vendor_name = manual_data['vendor_name']
+            invoice.vendor_gstin = manual_data['vendor_gstin']
+            invoice.billed_company_gstin = manual_data['billed_company_gstin']
+            invoice.grand_total = Decimal(manual_data['grand_total'])
+            invoice.status = 'PENDING_ANALYSIS'
+            invoice.save()
+            
+            # Delete any existing line items (in case of re-submission)
+            invoice.line_items.all().delete()
+            
+            # Create line items
+            for item_data in line_items:
+                LineItem.objects.create(
+                    invoice=invoice,
+                    description=item_data['description'],
+                    normalized_key=normalize_product_key(item_data['description']),
+                    hsn_sac_code=item_data['hsn_sac_code'],
+                    quantity=Decimal(str(item_data['quantity'])),
+                    unit_price=Decimal(str(item_data['unit_price'])),
+                    billed_gst_rate=Decimal(str(item_data['billed_gst_rate'])),
+                    line_total=Decimal(str(item_data['line_total']))
+                )
+            
+            logger.info(f"Manual entry completed for invoice {invoice.id}")
+            
+            # Run compliance checks
+            try:
+                # Prepare extracted_data format for compliance checks
+                extracted_data = {
+                    'invoice_id': manual_data['invoice_id'],
+                    'invoice_date': manual_data['invoice_date'],
+                    'vendor_name': manual_data['vendor_name'],
+                    'vendor_gstin': manual_data['vendor_gstin'],
+                    'billed_company_gstin': manual_data['billed_company_gstin'],
+                    'grand_total': manual_data['grand_total'],
+                    'line_items': line_items
+                }
+                
+                compliance_flags = run_all_checks(extracted_data, invoice)
+                
+                # Save compliance flags
+                for flag in compliance_flags:
+                    if not flag.invoice_id:
+                        flag.invoice = invoice
+                    flag.save()
+                
+                # Update invoice status based on flags
+                critical_flags = [f for f in compliance_flags if f.severity == 'CRITICAL']
+                if critical_flags:
+                    invoice.status = 'HAS_ANOMALIES'
+                else:
+                    invoice.status = 'CLEARED'
+                
+                invoice.save()
+                
+                logger.info(f"Compliance checks completed for manually entered invoice {invoice.id}")
+                
+            except Exception as e:
+                logger.error(f"Error during compliance checks for manual entry: {str(e)}")
+                # Create a system error flag
+                ComplianceFlag.objects.create(
+                    invoice=invoice,
+                    flag_type='SYSTEM_ERROR',
+                    severity='WARNING',
+                    description=f'Error during compliance analysis: {str(e)[:200]}'
+                )
+                invoice.status = 'HAS_ANOMALIES'
+                invoice.save()
+            
+            # Calculate health score
+            try:
+                health_engine = InvoiceHealthScoreEngine()
+                health_result = health_engine.calculate_health_score(invoice)
+                
+                # Store health score in database
+                InvoiceHealthScore.objects.create(
+                    invoice=invoice,
+                    overall_score=Decimal(str(health_result['score'])),
+                    status=health_result['status'],
+                    data_completeness_score=Decimal(str(health_result['breakdown']['data_completeness'])),
+                    verification_score=Decimal(str(health_result['breakdown']['verification'])),
+                    compliance_score=Decimal(str(health_result['breakdown']['compliance'])),
+                    fraud_detection_score=Decimal(str(health_result['breakdown']['fraud_detection'])),
+                    ai_confidence_score_component=Decimal(str(health_result['breakdown']['ai_confidence'])),
+                    key_flags=health_result['key_flags']
+                )
+                
+                logger.info(f"Health score calculated for manually entered invoice {invoice.id}")
+                
+            except Exception as e:
+                logger.error(f"Error calculating health score for manual entry: {str(e)}")
+                # Create default health score
+                try:
+                    InvoiceHealthScore.objects.create(
+                        invoice=invoice,
+                        overall_score=Decimal('0.0'),
+                        status='AT_RISK',
+                        data_completeness_score=Decimal('0.0'),
+                        verification_score=Decimal('0.0'),
+                        compliance_score=Decimal('0.0'),
+                        fraud_detection_score=Decimal('0.0'),
+                        ai_confidence_score_component=Decimal('0.0'),
+                        key_flags=[f'Health score calculation error: {str(e)[:100]}']
+                    )
+                except Exception as inner_e:
+                    logger.error(f"Failed to create default health score: {str(inner_e)}")
+            
+            messages.success(request, 'Invoice data submitted successfully! The invoice has been processed.')
+            return redirect('invoice_detail', invoice_id=invoice.id)
+            
+    except Exception as e:
+        logger.error(f"Error saving manual entry data: {str(e)}", exc_info=True)
+        messages.error(request, f'Failed to save invoice data: {str(e)}')
+        
+        # Re-render form
+        context = {
+            'invoice': invoice,
+            'form': form,
+            'failure_reason': invoice.extraction_failure_reason or 'AI extraction failed',
+        }
+        return render(request, 'manual_entry.html', context)
+
+
+@login_required
+@require_http_methods(["GET"])
+def dashboard_analytics_api(request):
+    """
+    AJAX endpoint to get real-time dashboard analytics data
+    
+    Returns JSON with updated metrics and chart data
+    Requirements: 7.5
+    """
+    try:
+        # Get date range filter parameter
+        days_filter = int(request.GET.get('days', 7))
+        days_filter = max(5, min(14, days_filter))
+        
+        # Get analytics data
+        invoice_per_day_data = dashboard_analytics_service.get_invoice_per_day_data(
+            request.user, 
+            days=days_filter
+        )
+        
+        money_flow_data = dashboard_analytics_service.get_money_flow_by_hsn(request.user)
+        company_leaderboard = dashboard_analytics_service.get_company_leaderboard(request.user)
+        red_flag_list = dashboard_analytics_service.get_red_flag_list(request.user)
+        
+        # Calculate key metrics
+        invoices_awaiting_verification = Invoice.objects.filter(
+            uploaded_by=request.user,
+            gst_verification_status='PENDING'
+        ).count()
+        
+        one_week_ago = timezone.now() - timedelta(days=7)
+        anomalies_this_week = ComplianceFlag.objects.filter(
+            invoice__uploaded_by=request.user,
+            created_at__gte=one_week_ago
+        ).count()
+        
+        total_amount = Invoice.objects.filter(
+            uploaded_by=request.user
+        ).aggregate(total=Sum('grand_total'))['total'] or Decimal('0')
+        
+        return JsonResponse({
+            'success': True,
+            'metrics': {
+                'invoices_awaiting_verification': invoices_awaiting_verification,
+                'anomalies_this_week': anomalies_this_week,
+                'total_amount_processed': float(total_amount),
+            },
+            'invoice_per_day_data': invoice_per_day_data,
+            'money_flow_data': money_flow_data,
+            'company_leaderboard': company_leaderboard,
+            'red_flag_list': red_flag_list,
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching dashboard analytics: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Failed to fetch analytics data'
         }, status=500)

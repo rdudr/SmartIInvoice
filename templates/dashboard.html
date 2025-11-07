@@ -41,7 +41,7 @@
                     <dt class="text-sm font-medium text-gray-500 mb-1">
                         Awaiting Verification
                     </dt>
-                    <dd class="text-2xl font-bold text-gray-900">
+                    <dd class="text-2xl font-bold text-gray-900" data-metric="awaiting-verification">
                         {{ metrics.invoices_awaiting_verification }}
                     </dd>
                     <div class="text-xs text-yellow-600 mt-1">
@@ -63,7 +63,7 @@
                     <dt class="text-sm font-medium text-gray-500 mb-1">
                         Anomalies This Week
                     </dt>
-                    <dd class="text-2xl font-bold text-gray-900">
+                    <dd class="text-2xl font-bold text-gray-900" data-metric="anomalies-week">
                         {{ metrics.anomalies_this_week }}
                     </dd>
                     <div class="text-xs text-red-600 mt-1">
@@ -85,7 +85,7 @@
                     <dt class="text-sm font-medium text-gray-500 mb-1">
                         Total Processed
                     </dt>
-                    <dd class="text-2xl font-bold text-gray-900">
+                    <dd class="text-2xl font-bold text-gray-900" data-metric="total-amount">
                         ₹{{ metrics.total_amount_processed|floatformat:2 }}
                     </dd>
                     <div class="text-xs text-green-600 mt-1">
@@ -286,10 +286,165 @@
                 <i class="fas fa-upload mr-2"></i>
                 Upload Invoice
             </button>
+            <button id="bulk-upload-btn" class="flex-1 inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl shadow-sm text-white bg-gradient-to-r from-accent to-green-500 hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-300 transform hover:scale-105">
+                <i class="fas fa-layer-group mr-2"></i>
+                Bulk Upload
+            </button>
             <button class="flex-1 inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-sm font-semibold rounded-xl text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105">
                 <i class="fas fa-file-invoice mr-2"></i>
                 View All Invoices
             </button>
+        </div>
+    </div>
+
+    <!-- Phase 2 Enhanced Analytics Section -->
+    <div class="mt-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-6">Advanced Analytics</h2>
+        
+        <!-- Invoice Per Day Chart -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-300 mb-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Invoice Per Day</h3>
+                    <p class="text-sm text-gray-500 mt-1">{{ invoice_per_day_data.total_days }} day invoice processing trend</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <select id="days-filter" class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="5" {% if days_filter == 5 %}selected{% endif %}>5 Days</option>
+                        <option value="7" {% if days_filter == 7 %}selected{% endif %}>7 Days</option>
+                        <option value="10" {% if days_filter == 10 %}selected{% endif %}>10 Days</option>
+                        <option value="14" {% if days_filter == 14 %}selected{% endif %}>14 Days</option>
+                    </select>
+                </div>
+            </div>
+            
+            {% if invoice_per_day_data.dates %}
+                <div class="h-80">
+                    <canvas id="invoice-per-day-chart"></canvas>
+                </div>
+                <div class="flex justify-center mt-4 space-x-6 text-sm text-gray-600">
+                    <div class="flex items-center">
+                        <span class="w-3 h-3 mr-2 bg-gray-700 rounded-full"></span>
+                        <span>Healthy</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="w-3 h-3 mr-2 bg-gray-400 rounded-full"></span>
+                        <span>At Risk</span>
+                    </div>
+                </div>
+            {% else %}
+                <div class="flex flex-col items-center justify-center py-12">
+                    <i class="fas fa-chart-bar text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500 text-center">No invoice data available for the selected period.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Money Flow and Red Flag Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Money Flow Donut Chart -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-300">
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Money Flow by HSN/SAC</h3>
+                        <p class="text-sm text-gray-500 mt-1">Top spending categories</p>
+                    </div>
+                </div>
+                
+                {% if money_flow_data %}
+                    <div class="flex items-center">
+                        <div class="w-48 h-48 relative mr-6">
+                            <canvas id="money-flow-chart"></canvas>
+                        </div>
+                        <div class="flex-1 space-y-2">
+                            {% for item in money_flow_data %}
+                                <div class="grid grid-cols-[auto,1fr,auto,auto] gap-x-3 items-center">
+                                    <span class="w-3 h-3 rounded-full money-flow-color" data-index="{{ forloop.counter0 }}"></span>
+                                    <span class="text-sm text-gray-700 truncate">{{ item.hsn_code }}</span>
+                                    <span class="text-sm font-semibold text-gray-800">₹{{ item.amount|floatformat:0 }}</span>
+                                    <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">{{ item.percentage }}%</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="flex flex-col items-center justify-center py-8">
+                        <i class="fas fa-chart-pie text-4xl text-gray-300 mb-4"></i>
+                        <p class="text-gray-500 text-center">No spending data available yet.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Red Flag List -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-300">
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Red Flag / High Risk</h3>
+                        <p class="text-sm text-gray-500 mt-1">Invoices requiring attention</p>
+                    </div>
+                </div>
+                
+                {% if red_flag_list %}
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-3 gap-4 text-xs font-semibold text-gray-500 uppercase">
+                            <span>Company</span>
+                            <span class="text-center">Date</span>
+                            <span class="text-right">Health Score</span>
+                        </div>
+                        {% for invoice in red_flag_list %}
+                            <a href="{% url 'invoice_detail' invoice.invoice_id %}" class="grid grid-cols-3 gap-4 items-center text-sm font-medium text-gray-700 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                                <span class="truncate">{{ invoice.vendor_name }}</span>
+                                <span class="text-center text-gray-500">{{ invoice.date }}</span>
+                                <span class="text-right">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold
+                                        {% if invoice.health_score >= 8 %}bg-green-100 text-green-800
+                                        {% elif invoice.health_score >= 5 %}bg-yellow-100 text-yellow-800
+                                        {% else %}bg-red-100 text-red-800{% endif %}">
+                                        {{ invoice.health_score }}
+                                    </span>
+                                </span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="flex flex-col items-center justify-center py-8">
+                        <i class="fas fa-shield-alt text-4xl text-green-300 mb-4"></i>
+                        <p class="text-gray-500 text-center">No high-risk invoices found.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Company Leaderboard -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-300">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">Company Leaderboard</h3>
+                    <p class="text-sm text-gray-500 mt-1">Top vendors by spending</p>
+                </div>
+            </div>
+            
+            {% if company_leaderboard %}
+                <div class="space-y-4">
+                    <div class="grid grid-cols-3 gap-4 text-xs font-semibold text-gray-500 uppercase">
+                        <span>Company Name</span>
+                        <span class="text-center">Amount</span>
+                        <span class="text-right">No of Invoices</span>
+                    </div>
+                    {% for vendor in company_leaderboard %}
+                        <div class="grid grid-cols-3 gap-4 items-center text-sm font-medium text-gray-700 hover:bg-gray-50 p-2 rounded-lg transition-colors">
+                            <span class="truncate">{{ vendor.vendor_name }}</span>
+                            <span class="text-center text-gray-500">₹{{ vendor.total_amount|floatformat:0 }}</span>
+                            <span class="text-right">{{ vendor.invoice_count }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="flex flex-col items-center justify-center py-8">
+                    <i class="fas fa-trophy text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500 text-center">No vendor data available yet.</p>
+                </div>
+            {% endif %}
         </div>
     </div>
 
@@ -377,6 +532,113 @@
     </div>
 </div>
 
+<!-- Bulk Upload Modal -->
+<div id="bulk-upload-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50 backdrop-blur-sm">
+    <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-2xl rounded-2xl bg-white animate-slide-in">
+        <div class="mt-3">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-900">Bulk Upload Invoices</h3>
+                    <p class="text-sm text-gray-500 mt-1">Upload multiple invoices for batch processing (max 50 files)</p>
+                </div>
+                <button id="close-bulk-modal" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <!-- Upload Area -->
+            <div id="bulk-upload-area" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-accent hover:bg-green-50 transition-all duration-300 cursor-pointer group">
+                <div id="bulk-upload-content">
+                    <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-accent to-green-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <i class="fas fa-layer-group text-2xl text-white"></i>
+                    </div>
+                    <p class="text-base text-gray-700 mb-2 font-medium">
+                        <span class="text-accent">Click to select files</span> or drag and drop
+                    </p>
+                    <p class="text-sm text-gray-500">Select multiple PNG, JPG, JPEG or PDF files (max. 10MB each)</p>
+                    <div class="mt-4 flex items-center justify-center space-x-4 text-xs text-gray-400">
+                        <div class="flex items-center">
+                            <i class="fas fa-images mr-1"></i>
+                            <span>Multiple Files</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-file-pdf mr-1"></i>
+                            <span>PDF Support</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-layer-group mr-1"></i>
+                            <span>Up to 50 files</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- File List -->
+                <div id="bulk-file-list" class="hidden mt-4 max-h-48 overflow-y-auto">
+                    <div class="text-left space-y-2" id="file-list-container"></div>
+                </div>
+                
+                <!-- Processing State -->
+                <div id="bulk-processing" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mb-4"></div>
+                        <p class="text-sm text-gray-600">Uploading files...</p>
+                        <p class="text-xs text-gray-500 mt-1">Please wait while we process your batch</p>
+                    </div>
+                </div>
+                
+                <!-- Progress State -->
+                <div id="bulk-progress" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
+                            <div id="progress-bar" class="bg-gradient-to-r from-accent to-green-500 h-4 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Processing invoices...</p>
+                        <p id="progress-text" class="text-xs text-gray-500">0 of 0 processed</p>
+                    </div>
+                </div>
+                
+                <!-- Success State -->
+                <div id="bulk-success" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-check-circle text-4xl text-green-500 mb-4"></i>
+                        <p class="text-sm text-gray-600 mb-2">Batch upload completed!</p>
+                        <p id="bulk-success-details" class="text-xs text-gray-500"></p>
+                    </div>
+                </div>
+                
+                <!-- Error State -->
+                <div id="bulk-error" class="hidden">
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-exclamation-triangle text-4xl text-red-500 mb-4"></i>
+                        <p class="text-sm text-gray-600 mb-2">Upload failed</p>
+                        <p id="bulk-error-details" class="text-xs text-red-500"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hidden File Input -->
+            <form id="bulk-upload-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" id="bulk-file-input" name="invoice_files" accept=".png,.jpg,.jpeg,.pdf" multiple class="hidden">
+            </form>
+            
+            <!-- Modal Actions -->
+            <div class="flex justify-end space-x-3 mt-8">
+                <button id="bulk-cancel-btn" class="px-6 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-200">
+                    Cancel
+                </button>
+                <button id="bulk-upload-submit-btn" class="hidden px-6 py-2 text-sm font-semibold text-white bg-gradient-to-r from-accent to-green-500 border border-transparent rounded-xl hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-200">
+                    <i class="fas fa-upload mr-2"></i>Upload <span id="file-count">0</span> Files
+                </button>
+                <button id="bulk-retry-btn" class="hidden px-6 py-2 text-sm font-semibold text-white bg-gradient-to-r from-accent to-green-500 border border-transparent rounded-xl hover:from-green-500 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition-all duration-200">
+                    <i class="fas fa-redo mr-2"></i>Try Again
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -436,6 +698,130 @@ document.addEventListener('DOMContentLoaded', function() {
             const flagType = element.getAttribute('data-type');
             element.style.backgroundColor = flagColors[flagType] || '#6B7280';
         });
+    }
+    
+    // ===== PHASE 2 ANALYTICS CHARTS =====
+    
+    // Invoice Per Day Bar Chart
+    const invoicePerDayChart = document.getElementById('invoice-per-day-chart');
+    if (invoicePerDayChart) {
+        const invoicePerDayData = {
+            dates: {{ invoice_per_day_data.dates|safe }},
+            genuine: {{ invoice_per_day_data.genuine_counts|safe }},
+            atRisk: {{ invoice_per_day_data.at_risk_counts|safe }}
+        };
+        
+        new Chart(invoicePerDayChart, {
+            type: 'bar',
+            data: {
+                labels: invoicePerDayData.dates,
+                datasets: [
+                    {
+                        label: 'Healthy',
+                        data: invoicePerDayData.genuine,
+                        backgroundColor: '#374151',
+                        borderRadius: 4,
+                        barThickness: 16
+                    },
+                    {
+                        label: 'At Risk',
+                        data: invoicePerDayData.atRisk,
+                        backgroundColor: '#9CA3AF',
+                        borderRadius: 4,
+                        barThickness: 16
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.parsed.y} invoice(s)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 10
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Days filter change handler
+    const daysFilter = document.getElementById('days-filter');
+    if (daysFilter) {
+        daysFilter.addEventListener('change', function() {
+            const days = this.value;
+            window.location.href = `?days=${days}`;
+        });
+    }
+    
+    // Money Flow Donut Chart
+    const moneyFlowChart = document.getElementById('money-flow-chart');
+    if (moneyFlowChart) {
+        const moneyFlowData = {{ money_flow_data|safe }};
+        
+        if (moneyFlowData && moneyFlowData.length > 0) {
+            const grayscaleColors = ['#6B7280', '#9CA3AF', '#D1D5DB', '#E5E7EB', '#F3F4F6'];
+            
+            const labels = moneyFlowData.map(item => item.hsn_code);
+            const data = moneyFlowData.map(item => item.amount);
+            const colors = grayscaleColors.slice(0, moneyFlowData.length);
+            
+            new Chart(moneyFlowChart, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderWidth: 2,
+                        borderColor: '#FFFFFF'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const item = moneyFlowData[context.dataIndex];
+                                    return `${context.label}: ₹${item.amount.toFixed(0)} (${item.percentage}%)`;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '60%'
+                }
+            });
+            
+            // Set legend colors
+            document.querySelectorAll('.money-flow-color').forEach(element => {
+                const index = parseInt(element.getAttribute('data-index'));
+                element.style.backgroundColor = colors[index] || '#6B7280';
+            });
+        }
     }
     
     // Modal elements
@@ -641,6 +1027,382 @@ document.addEventListener('DOMContentLoaded', function() {
             errorDetails.textContent = errorMessage;
         });
     }
+    
+    // ===== BULK UPLOAD FUNCTIONALITY =====
+    
+    const bulkModal = document.getElementById('bulk-upload-modal');
+    const bulkUploadBtn = document.getElementById('bulk-upload-btn');
+    const closeBulkModal = document.getElementById('close-bulk-modal');
+    const bulkCancelBtn = document.getElementById('bulk-cancel-btn');
+    const bulkRetryBtn = document.getElementById('bulk-retry-btn');
+    
+    const bulkUploadArea = document.getElementById('bulk-upload-area');
+    const bulkFileInput = document.getElementById('bulk-file-input');
+    const bulkUploadForm = document.getElementById('bulk-upload-form');
+    const bulkUploadSubmitBtn = document.getElementById('bulk-upload-submit-btn');
+    
+    const bulkUploadContent = document.getElementById('bulk-upload-content');
+    const bulkFileList = document.getElementById('bulk-file-list');
+    const fileListContainer = document.getElementById('file-list-container');
+    const bulkProcessing = document.getElementById('bulk-processing');
+    const bulkProgress = document.getElementById('bulk-progress');
+    const bulkSuccess = document.getElementById('bulk-success');
+    const bulkError = document.getElementById('bulk-error');
+    const bulkSuccessDetails = document.getElementById('bulk-success-details');
+    const bulkErrorDetails = document.getElementById('bulk-error-details');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const fileCountSpan = document.getElementById('file-count');
+    
+    let selectedFiles = [];
+    let currentBatchId = null;
+    let progressInterval = null;
+    
+    // Open bulk upload modal
+    bulkUploadBtn.addEventListener('click', function() {
+        bulkModal.classList.remove('hidden');
+        resetBulkModal();
+    });
+    
+    // Close bulk upload modal
+    function closeBulkModalHandler() {
+        bulkModal.classList.add('hidden');
+        resetBulkModal();
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+    }
+    
+    closeBulkModal.addEventListener('click', closeBulkModalHandler);
+    bulkCancelBtn.addEventListener('click', closeBulkModalHandler);
+    
+    // Close modal when clicking outside
+    bulkModal.addEventListener('click', function(e) {
+        if (e.target === bulkModal) {
+            closeBulkModalHandler();
+        }
+    });
+    
+    // Reset bulk modal to initial state
+    function resetBulkModal() {
+        bulkUploadContent.classList.remove('hidden');
+        bulkFileList.classList.add('hidden');
+        bulkProcessing.classList.add('hidden');
+        bulkProgress.classList.add('hidden');
+        bulkSuccess.classList.add('hidden');
+        bulkError.classList.add('hidden');
+        bulkUploadSubmitBtn.classList.add('hidden');
+        bulkRetryBtn.classList.add('hidden');
+        bulkFileInput.value = '';
+        selectedFiles = [];
+        fileListContainer.innerHTML = '';
+        bulkUploadArea.classList.remove('border-red-300', 'border-green-300');
+        bulkUploadArea.classList.add('border-gray-300');
+    }
+    
+    // Retry bulk upload
+    bulkRetryBtn.addEventListener('click', function() {
+        resetBulkModal();
+    });
+    
+    // File input change
+    bulkFileInput.addEventListener('change', function(e) {
+        handleFileSelection(e.target.files);
+    });
+    
+    // Click to select files
+    bulkUploadArea.addEventListener('click', function() {
+        if (!bulkProcessing.classList.contains('hidden') || !bulkProgress.classList.contains('hidden')) {
+            return; // Don't allow file selection during processing
+        }
+        bulkFileInput.click();
+    });
+    
+    // Drag and drop functionality
+    bulkUploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        if (!bulkProcessing.classList.contains('hidden') || !bulkProgress.classList.contains('hidden')) {
+            return;
+        }
+        bulkUploadArea.classList.add('border-accent', 'bg-green-50');
+    });
+    
+    bulkUploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        bulkUploadArea.classList.remove('border-accent', 'bg-green-50');
+    });
+    
+    bulkUploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        bulkUploadArea.classList.remove('border-accent', 'bg-green-50');
+        
+        if (!bulkProcessing.classList.contains('hidden') || !bulkProgress.classList.contains('hidden')) {
+            return;
+        }
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileSelection(files);
+        }
+    });
+    
+    // Handle file selection
+    function handleFileSelection(files) {
+        selectedFiles = Array.from(files);
+        
+        // Validate file count
+        if (selectedFiles.length > 50) {
+            alert('Maximum 50 files allowed per batch. Please select fewer files.');
+            selectedFiles = [];
+            return;
+        }
+        
+        if (selectedFiles.length === 0) {
+            return;
+        }
+        
+        // Validate each file
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        
+        let hasErrors = false;
+        fileListContainer.innerHTML = '';
+        
+        selectedFiles.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'flex items-center justify-between p-2 bg-gray-50 rounded-lg';
+            
+            let statusIcon = '<i class="fas fa-check-circle text-green-500"></i>';
+            let statusClass = '';
+            
+            if (!allowedTypes.includes(file.type)) {
+                statusIcon = '<i class="fas fa-exclamation-circle text-red-500"></i>';
+                statusClass = 'text-red-600';
+                hasErrors = true;
+            } else if (file.size > maxSize) {
+                statusIcon = '<i class="fas fa-exclamation-circle text-red-500"></i>';
+                statusClass = 'text-red-600';
+                hasErrors = true;
+            }
+            
+            fileItem.innerHTML = `
+                <div class="flex items-center flex-1 min-w-0">
+                    <i class="fas fa-file-invoice text-gray-400 mr-2"></i>
+                    <span class="text-sm text-gray-700 truncate ${statusClass}">${file.name}</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs text-gray-500">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                    ${statusIcon}
+                </div>
+            `;
+            
+            fileListContainer.appendChild(fileItem);
+        });
+        
+        // Show file list
+        bulkUploadContent.classList.add('hidden');
+        bulkFileList.classList.remove('hidden');
+        
+        // Show upload button if no errors
+        if (!hasErrors) {
+            bulkUploadSubmitBtn.classList.remove('hidden');
+            fileCountSpan.textContent = selectedFiles.length;
+        } else {
+            alert('Some files have errors. Please check file types and sizes.');
+        }
+    }
+    
+    // Submit bulk upload
+    bulkUploadSubmitBtn.addEventListener('click', function() {
+        uploadBulkFiles();
+    });
+    
+    // Upload bulk files function
+    function uploadBulkFiles() {
+        if (selectedFiles.length === 0) {
+            return;
+        }
+        
+        // Hide file list and upload button
+        bulkFileList.classList.add('hidden');
+        bulkUploadSubmitBtn.classList.add('hidden');
+        
+        // Show processing state
+        bulkProcessing.classList.remove('hidden');
+        bulkUploadArea.classList.remove('border-gray-300');
+        bulkUploadArea.classList.add('border-green-300');
+        
+        // Create FormData
+        const formData = new FormData();
+        selectedFiles.forEach(file => {
+            formData.append('invoice_files', file);
+        });
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        
+        // Upload files
+        fetch('{% url "bulk_upload_invoices" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            bulkProcessing.classList.add('hidden');
+            
+            if (data.success) {
+                // Start polling for progress
+                currentBatchId = data.batch_id;
+                bulkProgress.classList.remove('hidden');
+                startProgressPolling(data.batch_id, data.total_files);
+            } else {
+                // Show error
+                bulkError.classList.remove('hidden');
+                bulkUploadArea.classList.remove('border-green-300');
+                bulkUploadArea.classList.add('border-red-300');
+                bulkRetryBtn.classList.remove('hidden');
+                
+                let errorMessage = data.error || 'Upload failed';
+                if (data.details) {
+                    errorMessage += ': ' + data.details;
+                }
+                bulkErrorDetails.textContent = errorMessage;
+            }
+        })
+        .catch(error => {
+            console.error('Bulk upload error:', error);
+            bulkProcessing.classList.add('hidden');
+            bulkError.classList.remove('hidden');
+            bulkUploadArea.classList.remove('border-green-300');
+            bulkUploadArea.classList.add('border-red-300');
+            bulkRetryBtn.classList.remove('hidden');
+            bulkErrorDetails.textContent = 'Network error. Please check your connection and try again.';
+        });
+    }
+    
+    // Start polling for batch progress
+    function startProgressPolling(batchId, totalFiles) {
+        progressInterval = setInterval(() => {
+            fetch(`/api/batch-status/${batchId}/`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const processed = data.processed_count + data.failed_count;
+                    const percentage = data.progress_percentage;
+                    
+                    // Update progress bar
+                    progressBar.style.width = percentage + '%';
+                    progressText.textContent = `${processed} of ${data.total_files} processed`;
+                    
+                    // Check if completed
+                    if (data.status === 'COMPLETED' || data.status === 'PARTIAL_FAILURE') {
+                        clearInterval(progressInterval);
+                        progressInterval = null;
+                        
+                        // Show success
+                        bulkProgress.classList.add('hidden');
+                        bulkSuccess.classList.remove('hidden');
+                        bulkUploadArea.classList.remove('border-green-300');
+                        bulkUploadArea.classList.add('border-green-300');
+                        
+                        let message = `Successfully processed ${data.processed_count} invoice(s)`;
+                        if (data.failed_count > 0) {
+                            message += `, ${data.failed_count} failed`;
+                        }
+                        bulkSuccessDetails.textContent = message;
+                        
+                        // Auto-close and refresh after 3 seconds
+                        setTimeout(() => {
+                            closeBulkModalHandler();
+                            window.location.reload();
+                        }, 3000);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Progress polling error:', error);
+                clearInterval(progressInterval);
+                progressInterval = null;
+            });
+        }, 2000); // Poll every 2 seconds
+    }
+    
+    // ===== REAL-TIME DASHBOARD UPDATES =====
+    
+    // Poll for dashboard updates every 30 seconds
+    let dashboardUpdateInterval = null;
+    
+    function startDashboardUpdates() {
+        // Only start polling if not already running
+        if (dashboardUpdateInterval) {
+            return;
+        }
+        
+        dashboardUpdateInterval = setInterval(() => {
+            const currentDays = document.getElementById('days-filter')?.value || 7;
+            
+            fetch(`{% url "dashboard_analytics_api" %}?days=${currentDays}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update metrics
+                    updateMetrics(data.metrics);
+                    
+                    // Note: Chart updates would require recreating charts
+                    // For now, we'll just update the metrics
+                    // Full chart updates can be added if needed
+                }
+            })
+            .catch(error => {
+                console.error('Dashboard update error:', error);
+            });
+        }, 30000); // Poll every 30 seconds
+    }
+    
+    function updateMetrics(metrics) {
+        // Update metric values in the DOM
+        const metricsElements = {
+            'invoices_awaiting_verification': document.querySelector('[data-metric="awaiting-verification"]'),
+            'anomalies_this_week': document.querySelector('[data-metric="anomalies-week"]'),
+            'total_amount_processed': document.querySelector('[data-metric="total-amount"]')
+        };
+        
+        // Update each metric if element exists
+        if (metricsElements.invoices_awaiting_verification) {
+            metricsElements.invoices_awaiting_verification.textContent = metrics.invoices_awaiting_verification;
+        }
+        
+        if (metricsElements.anomalies_this_week) {
+            metricsElements.anomalies_this_week.textContent = metrics.anomalies_this_week;
+        }
+        
+        if (metricsElements.total_amount_processed) {
+            metricsElements.total_amount_processed.textContent = '₹' + metrics.total_amount_processed.toFixed(2);
+        }
+    }
+    
+    // Start dashboard updates
+    startDashboardUpdates();
+    
+    // Stop polling when user leaves the page
+    window.addEventListener('beforeunload', function() {
+        if (dashboardUpdateInterval) {
+            clearInterval(dashboardUpdateInterval);
+            dashboardUpdateInterval = null;
+        }
+    });
 });
 </script>
 {% endblock %}

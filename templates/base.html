@@ -73,7 +73,14 @@
                             <div class="ml-auto w-2 h-2 bg-white rounded-full"></div>
                         {% endif %}
                     </a>
-                    <a href="#" class="group flex items-center px-4 py-3 text-sm font-medium text-gray-700 rounded-lg hover:bg-accent hover:text-white transition-all duration-200 transform hover:scale-105">
+                    <a href="{% url 'gst_cache' %}" class="group flex items-center px-4 py-3 text-sm font-medium text-gray-700 rounded-lg hover:bg-accent hover:text-white transition-all duration-200 transform hover:scale-105 {% if request.resolver_match.url_name == 'gst_cache' %}bg-accent text-white shadow-md{% endif %}">
+                        <i class="fas fa-database mr-3 text-lg"></i>
+                        <span>GST Cache</span>
+                        {% if request.resolver_match.url_name == 'gst_cache' %}
+                            <div class="ml-auto w-2 h-2 bg-white rounded-full"></div>
+                        {% endif %}
+                    </a>
+                    <a href="#" class="group flex items-center px-4 py-3 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 transition-all duration-200 transform hover:scale-105">
                         <i class="fas fa-chart-bar mr-3 text-lg"></i>
                         <span>Reports</span>
                         <span class="ml-auto text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">Soon</span>

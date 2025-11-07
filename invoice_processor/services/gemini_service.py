@@ -16,14 +16,40 @@ logger = logging.getLogger(__name__)
 class GeminiService:
     """Service for extracting invoice data using Google Gemini API"""
     
-    def __init__(self):
-        """Initialize Gemini service with API key from environment"""
-        self.api_key = config('GEMINI_API_KEY', default=None)
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+    def __init__(self, use_key_manager=True):
+        """
+        Initialize Gemini service with API key management
         
-        # Initialize the new Gemini client
-        self.client = genai.Client(api_key=self.api_key)
+        Args:
+            use_key_manager: If True, use APIKeyManager for automatic failover.
+                           If False, use single key from environment (backward compatibility)
+        """
+        self.use_key_manager = use_key_manager
+        self.api_key_manager = None
+        self.client = None
+        
+        if use_key_manager:
+            try:
+                from invoice_processor.services.api_key_manager import api_key_manager
+                self.api_key_manager = api_key_manager
+                # Get initial key
+                api_key = self.api_key_manager.get_active_key()
+                if not api_key:
+                    raise ValueError("No active API keys available in the pool")
+                self.client = genai.Client(api_key=api_key)
+                logger.info("GeminiService initialized with API key manager")
+            except Exception as e:
+                logger.warning(f"Failed to initialize API key manager: {e}. Falling back to single key.")
+                self.use_key_manager = False
+        
+        if not self.use_key_manager:
+            # Fallback to single key for backward compatibility
+            self.api_key = config('GEMINI_API_KEY', default=None)
+            if not self.api_key:
+                raise ValueError("GEMINI_API_KEY environment variable is required")
+            self.client = genai.Client(api_key=self.api_key)
+            logger.info("GeminiService initialized with single API key")
+        
         self.model_name = 'gemini-2.5-flash'
         
         # Configuration for API calls
@@ -232,7 +258,7 @@ Extract data carefully and return only the JSON response.
    
     def _call_gemini_api(self, prompt: str, image: Image.Image) -> Optional[str]:
         """
-        Call Gemini API with retry logic and error handling
+        Call Gemini API with retry logic, error handling, and automatic key failover
         
         Args:
             prompt: Extraction prompt
@@ -276,9 +302,22 @@ Extract data carefully and return only the JSON response.
                 error_msg = str(e)
                 last_error = error_msg
                 
+                # Check if this is a quota/rate limit error
+                is_quota_error = "quota" in error_msg.lower() or "rate" in error_msg.lower() or "429" in error_msg
+                
                 # Log specific error types for better debugging
-                if "quota" in error_msg.lower() or "rate" in error_msg.lower():
+                if is_quota_error:
                     logger.error(f"Rate limit/quota exceeded on attempt {attempt + 1}: {error_msg}")
+                    
+                    # Try to failover to next key if using key manager
+                    if self.use_key_manager and self.api_key_manager:
+                        if self._try_failover_to_next_key():
+                            logger.info("Successfully failed over to next API key, retrying immediately")
+                            continue  # Retry immediately with new key
+                        else:
+                            logger.error("Failover failed: No more active API keys available")
+                            return None  # No point in retrying if all keys are exhausted
+                            
                 elif "timeout" in error_msg.lower():
                     logger.error(f"Timeout error on attempt {attempt + 1}: {error_msg}")
                 elif "network" in error_msg.lower() or "connection" in error_msg.lower():
@@ -294,6 +333,31 @@ Extract data carefully and return only the JSON response.
         
         logger.error(f"All Gemini API attempts failed. Last error: {last_error}")
         return None
+    
+    def _try_failover_to_next_key(self) -> bool:
+        """
+        Attempt to failover to the next available API key
+        
+        Returns:
+            bool: True if failover successful, False if no keys available
+        """
+        try:
+            # Mark current key as exhausted (get it from the client)
+            # Note: We can't easily get the current key from the client, so we'll just get a new one
+            new_key = self.api_key_manager.get_active_key()
+            
+            if new_key:
+                # Reinitialize client with new key
+                self.client = genai.Client(api_key=new_key)
+                logger.info("Reinitialized Gemini client with new API key")
+                return True
+            else:
+                logger.error("No active API keys available for failover")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error during API key failover: {e}")
+            return False
     
     def _parse_gemini_response(self, response_text: str) -> Dict[str, Any]:
         """
@@ -441,7 +505,13 @@ Extract data carefully and return only the JSON response.
 
 
 # Create a singleton instance for easy import
-gemini_service = GeminiService()
+# Use key manager by default for automatic failover
+try:
+    gemini_service = GeminiService(use_key_manager=True)
+except Exception as e:
+    logger.warning(f"Failed to initialize GeminiService with key manager: {e}")
+    # Fallback to single key mode
+    gemini_service = GeminiService(use_key_manager=False)
 
 
 def extract_data_from_image(image_file) -> Dict[str, Any]:
