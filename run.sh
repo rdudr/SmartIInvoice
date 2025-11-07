@@ -55,6 +55,11 @@ cleanup() {
     log "Shutting down services..."
     
     # Kill background processes
+    if [ ! -z "$GST_PID" ]; then
+        log "Stopping GST service (PID: $GST_PID)..."
+        kill $GST_PID 2>/dev/null || true
+    fi
+    
     if [ ! -z "$CELERY_PID" ]; then
         log "Stopping Celery worker (PID: $CELERY_PID)..."
         kill $CELERY_PID 2>/dev/null || true
@@ -160,10 +165,54 @@ else
 fi
 
 # ============================================================================
-# Step 4: Start Celery Worker (if Redis is running)
+# Step 4: Start GST Verification Service
+# ============================================================================
+log "Step 4: Starting GST Verification Service..."
+
+GST_LOG="logs/gst_service_${TIMESTAMP}.log"
+log "GST Service log: $GST_LOG"
+
+# Check if GST service directory exists
+if [ -d "gst verification template" ]; then
+    # Start real GST service (connects to government portal)
+    cd "gst verification template"
+    python app.py > "../$GST_LOG" 2>&1 &
+    GST_PID=$!
+    cd ..
+    
+    # Wait for GST service to start
+    sleep 3
+    
+    # Check if GST service is running
+    if ps -p $GST_PID > /dev/null; then
+        # Try to connect to GST service
+        curl -s http://127.0.0.1:5001 &> /dev/null
+        if [ $? -eq 0 ]; then
+            success "GST Verification Service started (PID: $GST_PID)"
+            log "GST Service logs: $GST_LOG"
+            log "Using REAL GST verification (connects to government portal)"
+        else
+            warning "GST service started but may not be responding yet"
+            log "Check $GST_LOG for details"
+            log "Note: Real GST service connects to government portal"
+            log "If you experience timeouts, edit run.sh to use app_mock.py instead"
+        fi
+    else
+        warning "GST service failed to start"
+        log "Check $GST_LOG for details"
+        GST_PID=""
+    fi
+else
+    warning "GST verification template directory not found"
+    log "GST verification features will not be available"
+    GST_PID=""
+fi
+
+# ============================================================================
+# Step 5: Start Celery Worker (if Redis is running)
 # ============================================================================
 if [ $REDIS_RUNNING -eq 1 ]; then
-    log "Step 4: Starting Celery worker..."
+    log "Step 5: Starting Celery worker..."
     
     CELERY_LOG="logs/celery_${TIMESTAMP}.log"
     log "Celery log: $CELERY_LOG"
@@ -185,13 +234,13 @@ if [ $REDIS_RUNNING -eq 1 ]; then
         CELERY_PID=""
     fi
 else
-    log "Step 4: Skipping Celery (Redis not available)"
+    log "Step 5: Skipping Celery (Redis not available)"
 fi
 
 # ============================================================================
-# Step 5: Run Database Migrations (if needed)
+# Step 6: Run Database Migrations (if needed)
 # ============================================================================
-log "Step 5: Checking for pending migrations..."
+log "Step 6: Checking for pending migrations..."
 
 python manage.py migrate --check &> /dev/null
 if [ $? -ne 0 ]; then
@@ -208,9 +257,9 @@ else
 fi
 
 # ============================================================================
-# Step 6: Start Django Development Server
+# Step 7: Start Django Development Server
 # ============================================================================
-log "Step 6: Starting Django development server..."
+log "Step 7: Starting Django development server..."
 
 DJANGO_LOG="logs/django_${TIMESTAMP}.log"
 log "Django log: $DJANGO_LOG"
@@ -240,9 +289,9 @@ else
 fi
 
 # ============================================================================
-# Step 7: Open Browser
+# Step 8: Open Browser
 # ============================================================================
-log "Step 7: Opening application in browser..."
+log "Step 8: Opening application in browser..."
 
 sleep 2
 
@@ -276,6 +325,11 @@ echo ""
 echo -e "${CYAN}Running Services:${NC}"
 echo ""
 echo -e "   ${GREEN}✓${NC} Django Server:    http://127.0.0.1:8000 (PID: $DJANGO_PID)"
+if [ ! -z "$GST_PID" ]; then
+    echo -e "   ${GREEN}✓${NC} GST Service:      http://127.0.0.1:5001 (PID: $GST_PID)"
+else
+    echo -e "   ${YELLOW}✗${NC} GST Service:      Not running"
+fi
 if [ $REDIS_RUNNING -eq 1 ]; then
     echo -e "   ${GREEN}✓${NC} Redis Server:     localhost:6379 (PID: $REDIS_PID)"
     if [ ! -z "$CELERY_PID" ]; then
@@ -289,6 +343,9 @@ echo ""
 echo -e "${CYAN}Log Files:${NC}"
 echo "   - Main log:      $LOG_FILE"
 echo "   - Django log:    $DJANGO_LOG"
+if [ ! -z "$GST_PID" ]; then
+    echo "   - GST log:       $GST_LOG"
+fi
 if [ $REDIS_RUNNING -eq 1 ]; then
     if [ ! -z "$CELERY_PID" ]; then
         echo "   - Celery log:    $CELERY_LOG"

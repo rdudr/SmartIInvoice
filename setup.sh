@@ -231,9 +231,26 @@ else
 fi
 
 # ============================================================================
-# Step 10: Verify Installation
+# Step 10: Setup GST Verification Service
 # ============================================================================
-log "Step 10: Verifying installation..."
+log "Step 10: Setting up GST Verification Service..."
+
+if [ -d "gst verification template" ]; then
+    log "Installing GST service dependencies..."
+    pip install flask uvicorn asgiref pillow >> "$LOG_FILE" 2>&1
+    if [ $? -ne 0 ]; then
+        warning "Failed to install GST service dependencies"
+    else
+        success "GST service dependencies installed"
+    fi
+else
+    warning "GST verification template directory not found"
+fi
+
+# ============================================================================
+# Step 11: Verify Installation
+# ============================================================================
+log "Step 11: Verifying installation..."
 
 log "Checking Django installation..."
 python -c "import django; print('Django version:', django.get_version())" >> "$LOG_FILE" 2>&1

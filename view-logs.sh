@@ -36,14 +36,15 @@ echo ""
 echo "1. Latest setup log"
 echo "2. Latest run log"
 echo "3. Latest Django log"
-echo "4. Latest Celery log"
-echo "5. Latest Redis log"
-echo "6. All logs (combined)"
-echo "7. Tail latest Django log (live)"
-echo "8. Exit"
+echo "4. Latest GST service log"
+echo "5. Latest Celery log"
+echo "6. Latest Redis log"
+echo "7. All logs (combined)"
+echo "8. Tail latest Django log (live)"
+echo "9. Exit"
 echo ""
 
-read -p "Enter choice (1-8): " CHOICE
+read -p "Enter choice (1-9): " CHOICE
 
 case $CHOICE in
     1)
@@ -56,12 +57,15 @@ case $CHOICE in
         LOGFILE=$(ls -t logs/django_*.log 2>/dev/null | head -1)
         ;;
     4)
-        LOGFILE=$(ls -t logs/celery_*.log 2>/dev/null | head -1)
+        LOGFILE=$(ls -t logs/gst_service_*.log 2>/dev/null | head -1)
         ;;
     5)
-        LOGFILE=$(ls -t logs/redis_*.log 2>/dev/null | head -1)
+        LOGFILE=$(ls -t logs/celery_*.log 2>/dev/null | head -1)
         ;;
     6)
+        LOGFILE=$(ls -t logs/redis_*.log 2>/dev/null | head -1)
+        ;;
+    7)
         echo ""
         echo -e "${CYAN}Showing all logs (most recent first):${NC}"
         echo ""
@@ -72,7 +76,7 @@ case $CHOICE in
         done
         exit 0
         ;;
-    7)
+    8)
         LOGFILE=$(ls -t logs/django_*.log 2>/dev/null | head -1)
         if [ -z "$LOGFILE" ]; then
             echo -e "${YELLOW}No Django log file found.${NC}"
@@ -85,7 +89,7 @@ case $CHOICE in
         tail -f "$LOGFILE"
         exit 0
         ;;
-    8)
+    9)
         exit 0
         ;;
     *)

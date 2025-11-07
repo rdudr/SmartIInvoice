@@ -222,9 +222,26 @@ if /i "!CREATE_SUPERUSER!"=="y" (
 )
 
 REM ============================================================================
-REM Step 10: Verify Installation
+REM Step 10: Setup GST Verification Service
 REM ============================================================================
-call :log "Step 10: Verifying installation..."
+call :log "Step 10: Setting up GST Verification Service..."
+
+if exist "gst verification template" (
+    call :log "Installing GST service dependencies..."
+    pip install flask uvicorn asgiref pillow >> "%LOG_FILE%" 2>&1
+    if errorlevel 1 (
+        call :warning "Failed to install GST service dependencies"
+    ) else (
+        call :success "GST service dependencies installed"
+    )
+) else (
+    call :warning "GST verification template directory not found"
+)
+
+REM ============================================================================
+REM Step 11: Verify Installation
+REM ============================================================================
+call :log "Step 11: Verifying installation..."
 
 call :log "Checking Django installation..."
 python -c "import django; print('Django version:', django.get_version())" >> "%LOG_FILE%" 2>&1

@@ -37,13 +37,14 @@ echo.
 echo 1. Latest setup log
 echo 2. Latest run log
 echo 3. Latest Django log
-echo 4. Latest Celery log
-echo 5. Latest Redis log
-echo 6. All logs (combined)
-echo 7. Exit
+echo 4. Latest GST service log
+echo 5. Latest Celery log
+echo 6. Latest Redis log
+echo 7. All logs (combined)
+echo 8. Exit
 echo.
 
-set /p CHOICE="Enter choice (1-7): "
+set /p CHOICE="Enter choice (1-8): "
 
 if "%CHOICE%"=="1" (
     for /f %%i in ('dir /b /o-d logs\setup_*.log 2^>nul') do (
@@ -67,20 +68,27 @@ if "%CHOICE%"=="3" (
 )
 
 if "%CHOICE%"=="4" (
-    for /f %%i in ('dir /b /o-d logs\celery_*.log 2^>nul') do (
+    for /f %%i in ('dir /b /o-d logs\gst_service_*.log 2^>nul') do (
         set LOGFILE=logs\%%i
         goto :show_log
     )
 )
 
 if "%CHOICE%"=="5" (
-    for /f %%i in ('dir /b /o-d logs\redis_*.log 2^>nul') do (
+    for /f %%i in ('dir /b /o-d logs\celery_*.log 2^>nul') do (
         set LOGFILE=logs\%%i
         goto :show_log
     )
 )
 
 if "%CHOICE%"=="6" (
+    for /f %%i in ('dir /b /o-d logs\redis_*.log 2^>nul') do (
+        set LOGFILE=logs\%%i
+        goto :show_log
+    )
+)
+
+if "%CHOICE%"=="7" (
     echo.
     echo %CYAN%Showing all logs (most recent first):%NC%
     echo.
@@ -93,7 +101,7 @@ if "%CHOICE%"=="6" (
     exit /b 0
 )
 
-if "%CHOICE%"=="7" (
+if "%CHOICE%"=="8" (
     exit /b 0
 )
 

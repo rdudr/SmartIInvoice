@@ -118,20 +118,23 @@ call :log "GST Service log: !GST_LOG!"
 
 REM Check if GST service directory exists
 if exist "gst verification template" (
-    REM Start mock GST service (recommended for development)
-    start "GST Service" cmd /c "cd "gst verification template" && ..\venv\Scripts\activate.bat && python app_mock.py > ..\!GST_LOG! 2>&1"
+    REM Start real GST service (connects to government portal)
+    start "GST Service" cmd /c "cd "gst verification template" && ..\venv\Scripts\activate.bat && python app.py > ..\!GST_LOG! 2>&1"
     
     REM Wait for GST service to start
     timeout /t 3 /nobreak >nul
     
     REM Check if GST service is running
-    curl -s http://127.0.0.1:5001/health >nul 2>&1
+    curl -s http://127.0.0.1:5001 >nul 2>&1
     if errorlevel 1 (
         call :warning "GST service may not have started properly"
         call :log "Check !GST_LOG! for details"
+        call :log "Note: Real GST service connects to government portal"
+        call :log "If you experience timeouts, edit run.bat to use app_mock.py instead"
     ) else (
         call :success "GST Verification Service started on port 5001"
         call :log "GST Service logs: !GST_LOG!"
+        call :log "Using REAL GST verification (connects to government portal)"
     )
 ) else (
     call :warning "GST verification template directory not found"
