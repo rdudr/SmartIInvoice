@@ -218,7 +218,7 @@ if [ $REDIS_RUNNING -eq 1 ]; then
     log "Celery log: $CELERY_LOG"
     
     # Start Celery in background
-    celery -A smart_invoice worker --loglevel=info > "$CELERY_LOG" 2>&1 &
+    celery -A smartinvoice worker --loglevel=info > "$CELERY_LOG" 2>&1 &
     CELERY_PID=$!
     
     # Wait for Celery to start

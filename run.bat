@@ -150,7 +150,7 @@ if !REDIS_RUNNING!==1 (
     set CELERY_LOG=logs\celery_%TIMESTAMP%.log
     call :log "Celery log: !CELERY_LOG!"
     
-    start "Celery Worker" cmd /c "venv\Scripts\activate.bat && celery -A smart_invoice worker --loglevel=info --pool=solo > !CELERY_LOG! 2>&1"
+    start "Celery Worker" cmd /c "venv\Scripts\activate.bat && celery -A smartinvoice worker --loglevel=info --pool=solo > !CELERY_LOG! 2>&1"
     
     REM Wait for Celery to start
     timeout /t 3 /nobreak >nul
