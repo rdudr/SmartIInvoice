@@ -231,7 +231,7 @@
                                 </td>
                                 <td class="px-4 lg:px-6 py-4 whitespace-nowrap text-sm">
                                     {% if invoice.gst_verification_status == 'PENDING' and invoice.vendor_gstin %}
-                                        <button onclick="startVerification({{ invoice.id }}, '{{ invoice.vendor_gstin }}')" 
+                                        <button onclick="event.stopPropagation(); startVerification({{ invoice.id }}, '{{ invoice.vendor_gstin }}')" 
                                                 class="verify-btn inline-flex items-center bg-gradient-to-r from-primary to-secondary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 shadow-sm">
                                             <i class="fas fa-shield-alt mr-2"></i>Verify
                                         </button>

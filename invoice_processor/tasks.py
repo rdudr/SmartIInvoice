@@ -218,34 +218,39 @@ def process_invoice_async(self, invoice_id, batch_id=None):
             health_engine = InvoiceHealthScoreEngine()
             health_result = health_engine.calculate_health_score(invoice)
             
-            InvoiceHealthScore.objects.create(
+            # Use update_or_create to handle cases where health score already exists
+            InvoiceHealthScore.objects.update_or_create(
                 invoice=invoice,
-                overall_score=Decimal(str(health_result['score'])),
-                status=health_result['status'],
-                data_completeness_score=Decimal(str(health_result['breakdown']['data_completeness'])),
-                verification_score=Decimal(str(health_result['breakdown']['verification'])),
-                compliance_score=Decimal(str(health_result['breakdown']['compliance'])),
-                fraud_detection_score=Decimal(str(health_result['breakdown']['fraud_detection'])),
-                ai_confidence_score_component=Decimal(str(health_result['breakdown']['ai_confidence'])),
-                key_flags=health_result['key_flags']
+                defaults={
+                    'overall_score': Decimal(str(health_result['score'])),
+                    'status': health_result['status'],
+                    'data_completeness_score': Decimal(str(health_result['breakdown']['data_completeness'])),
+                    'verification_score': Decimal(str(health_result['breakdown']['verification'])),
+                    'compliance_score': Decimal(str(health_result['breakdown']['compliance'])),
+                    'fraud_detection_score': Decimal(str(health_result['breakdown']['fraud_detection'])),
+                    'ai_confidence_score_component': Decimal(str(health_result['breakdown']['ai_confidence'])),
+                    'key_flags': health_result['key_flags']
+                }
             )
             
             logger.info(f"Health score calculated for invoice {invoice_id}: {health_result['score']}")
             
         except Exception as e:
-            logger.error(f"Error calculating health score for invoice {invoice_id}: {str(e)}")
+            logger.error(f"Error calculating health score for invoice {invoice_id}: {str(e)}", exc_info=True)
             # Create default health score
             try:
-                InvoiceHealthScore.objects.create(
+                InvoiceHealthScore.objects.update_or_create(
                     invoice=invoice,
-                    overall_score=Decimal('0.0'),
-                    status='AT_RISK',
-                    data_completeness_score=Decimal('0.0'),
-                    verification_score=Decimal('0.0'),
-                    compliance_score=Decimal('0.0'),
-                    fraud_detection_score=Decimal('0.0'),
-                    ai_confidence_score_component=Decimal('0.0'),
-                    key_flags=[f'Health score calculation error: {str(e)[:100]}']
+                    defaults={
+                        'overall_score': Decimal('0.0'),
+                        'status': 'AT_RISK',
+                        'data_completeness_score': Decimal('0.0'),
+                        'verification_score': Decimal('0.0'),
+                        'compliance_score': Decimal('0.0'),
+                        'fraud_detection_score': Decimal('0.0'),
+                        'ai_confidence_score_component': Decimal('0.0'),
+                        'key_flags': [f'Health score calculation error: {str(e)[:100]}']
+                    }
                 )
             except Exception as inner_e:
                 logger.error(f"Failed to create default health score for invoice {invoice_id}: {str(inner_e)}")

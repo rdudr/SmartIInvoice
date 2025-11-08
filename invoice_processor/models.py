@@ -196,11 +196,11 @@ class InvoiceHealthScore(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
     
     # Category scores (weighted components)
-    data_completeness_score = models.DecimalField(max_digits=4, decimal_places=2)  # 0.00 to 100.00
-    verification_score = models.DecimalField(max_digits=4, decimal_places=2)  # 0.00 to 100.00
-    compliance_score = models.DecimalField(max_digits=4, decimal_places=2)  # 0.00 to 100.00
-    fraud_detection_score = models.DecimalField(max_digits=4, decimal_places=2)  # 0.00 to 100.00
-    ai_confidence_score_component = models.DecimalField(max_digits=4, decimal_places=2)  # 0.00 to 100.00
+    data_completeness_score = models.DecimalField(max_digits=5, decimal_places=2)  # 0.00 to 100.00
+    verification_score = models.DecimalField(max_digits=5, decimal_places=2)  # 0.00 to 100.00
+    compliance_score = models.DecimalField(max_digits=5, decimal_places=2)  # 0.00 to 100.00
+    fraud_detection_score = models.DecimalField(max_digits=5, decimal_places=2)  # 0.00 to 100.00
+    ai_confidence_score_component = models.DecimalField(max_digits=5, decimal_places=2)  # 0.00 to 100.00
     
     key_flags = models.JSONField(default=list)  # List of issue descriptions
     calculated_at = models.DateTimeField(auto_now=True)
