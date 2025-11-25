@@ -15,5 +15,8 @@ python manage.py collectstatic --no-input
 # Run migrations
 python manage.py migrate
 
+# Create data directory if it doesn't exist
+mkdir -p data
+
 # Load HSN data if not already loaded
 python manage.py load_hsn_data --force || echo "HSN data already loaded or files not found"
