@@ -1,35 +1,47 @@
-# Docker Deployment Guide
+# Docker Deployment Guide (New Service)
 
-## Deploy to Render using Docker
+## Create a New Docker Service on Render
 
-1.  **Push your code to GitHub**:
-    ```bash
-    git add .
-    git commit -m "Add Docker configuration"
-    git push origin main
-    ```
+Since you want to start fresh, follow these steps to create a **new** service running with Docker.
 
-2.  **Go to Render Dashboard**:
-    *   Click on your Service.
-    *   Go to **Settings**.
-    *   Scroll down to **Runtime**.
-    *   Change it from **Python 3** to **Docker**.
-    *   Click **Save Changes**.
-
-3.  **Wait for Build**:
-    *   Render will now build your application using the `Dockerfile`.
-    *   This might take a few minutes the first time.
-
-4.  **Verify**:
-    *   Once the build finishes, your site will be live!
-
-## Why Docker?
-*   **Consistency**: Runs the same everywhere.
-*   **Isolation**: No conflicts with system libraries.
-*   **Simplicity**: No need to configure Python versions or build commands manually (it's all in the Dockerfile).
-
-## Local Testing (Optional)
-If you have Docker installed locally, you can test it:
+### 1. Push Your Code
+Ensure your latest Docker configuration is on GitHub:
 ```bash
-docker-compose up --build
+git push origin main
 ```
+
+### 2. Create New Web Service
+1.  Go to the [Render Dashboard](https://dashboard.render.com/).
+2.  Click **New +** and select **Web Service**.
+3.  Connect your `SmartIInvoice` repository.
+
+### 3. Configure Service
+Render will auto-detect the `Dockerfile`. Ensure these settings:
+
+*   **Name**: `smartinvoice-docker` (or any name you like)
+*   **Region**: Choose the one closest to you (e.g., Singapore, Frankfurt)
+*   **Runtime**: **Docker** (This is crucial!)
+*   **Instance Type**: **Free**
+
+### 4. Environment Variables
+You must add these variables again for the new service.
+*   **Key**: `SECRET_KEY`
+    *   **Value**: (Paste your generated secret key)
+*   **Key**: `GEMINI_API_KEY`
+    *   **Value**: (Your Google Gemini API Key)
+*   **Key**: `DEBUG`
+    *   **Value**: `False`
+*   **Key**: `ALLOWED_HOSTS`
+    *   **Value**: `*` (We set this in settings.py, but good to have here too)
+*   **Key**: `DATABASE_URL`
+    *   **Value**: (Copy the "Internal Connection String" from your existing PostgreSQL database on Render)
+*   **Key**: `CELERY_BROKER_URL`
+    *   **Value**: (Copy the "Internal Connection String" from your existing Redis on Render)
+
+### 5. Deploy
+Click **Create Web Service**.
+
+Render will start building your Docker image. This takes a bit longer than a standard Python build (about 3-5 minutes), but it's much more reliable.
+
+### 6. Verify
+Once the build finishes and you see the green **Live** badge, click the URL to test your fresh Docker deployment!
